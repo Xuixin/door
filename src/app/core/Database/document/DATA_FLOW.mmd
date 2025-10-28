@@ -1,0 +1,110 @@
+sequenceDiagram
+autonumber
+participant UI as 🧩 UI Component
+participant Facade as 🎭 TransactionService
+participant DB as 💾 RxDB (Local DB)
+participant Repl as 🔄 Replication Service
+participant Net as 🌐 NetworkStatus
+participant API as 🚀 GraphQL API
+participant BE as 🗄️ Backend (PostgreSQL)
+
+    %% ---- CREATE ----
+    rect rgb(230,255,230)
+    note over UI,DB: 🟢 CREATE Transaction
+    UI->>Facade: create(data)
+    Facade->>DB: insert(document)
+    DB-->>Facade: inserted doc + emits change$
+    Facade-->>UI: return (optimistic local result)
+    Facade->>Net: isOnline()
+    alt Online
+        Net-->>Facade: true
+        Facade->>Repl: enqueue for push
+        Repl->>API: GraphQL mutation (insert)
+        API->>BE: INSERT INTO transactions
+        BE-->>API: OK
+        API-->>Repl: success
+        Repl->>DB: mark as synced
+    else Offline
+        Net-->>Facade: false
+        note over DB,Repl: Stored locally, pending push
+    end
+    end
+
+    %% ---- READ ----
+    rect rgb(230,240,255)
+    note over UI,BE: 🔵 READ Transactions
+    UI->>Facade: findAll()
+    Facade->>DB: query local docs
+    DB-->>Facade: return cached results
+    Facade-->>UI: display immediately
+    Repl->>API: Pull query (with checkpoint)
+    API->>BE: SELECT * FROM transactions
+    BE-->>API: return new docs + checkpoint
+    API-->>Repl: response
+    Repl->>DB: insert/update docs
+    DB-->>Facade: emits reactive changes
+    Facade-->>UI: auto-update UI
+    end
+
+    %% ---- UPDATE ----
+    rect rgb(255,250,230)
+    note over UI,BE: 🟡 UPDATE Transaction
+    UI->>Facade: update(id, changes)
+    Facade->>DB: find + update
+    DB-->>Facade: updated doc
+    Facade->>Net: isOnline()
+    alt Online
+        Facade->>Repl: enqueue for push
+        Repl->>API: GraphQL mutation (update)
+        API->>BE: UPDATE transactions
+        BE-->>API: OK
+        API-->>Repl: success
+        Repl->>DB: mark synced
+    else Offline
+        note over DB,Repl: Queued for next sync
+    end
+    end
+
+    %% ---- DELETE ----
+    rect rgb(255,235,235)
+    note over UI,BE: 🔴 DELETE Transaction
+    UI->>Facade: delete(id)
+    Facade->>DB: remove document
+    DB-->>Facade: removed
+    Facade->>Net: isOnline()
+    alt Online
+        Repl->>API: mutation (deleted=true)
+        API->>BE: UPDATE set deleted=true
+        BE-->>API: OK
+        API-->>Repl: confirmed
+    else Offline
+        note over Repl: queued deletion
+    end
+    end
+
+    %% ---- OFFLINE/ONLINE TRANSITION ----
+    rect rgb(245,245,245)
+    note over Net,Repl: ⚡ Network Transition
+    Net-->>Repl: offline detected → pause replication
+    DB-->>UI: still reactive locally
+    Net-->>Repl: online detected → resume
+    Repl->>API: pull latest
+    API->>BE: SELECT changes since checkpoint
+    BE-->>API: return updates
+    API-->>Repl: docs
+    Repl->>DB: merge
+    DB-->>UI: reactive update
+    Repl->>API: push queued offline docs
+    API->>BE: insert/update queued
+    BE-->>API: success
+    API-->>Repl: confirm sync
+    end
+
+    %% ---- STREAM ----
+    rect rgb(240,230,255)
+    note over API,Repl: 📡 Live Stream (WebSocket)
+    Repl->>API: subscribe to stream
+    API-->>Repl: real-time update
+    Repl->>DB: apply change
+    DB-->>UI: reactive update instantly
+    end

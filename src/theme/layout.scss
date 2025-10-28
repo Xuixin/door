@@ -1,0 +1,86 @@
+.app-layout {
+  @apply flex h-dvh w-full flex-col overflow-hidden bg-white;
+}
+
+.app-layout-dialog {
+  @apply flex h-full w-full flex-col overflow-hidden;
+}
+
+.app-header {
+  @apply flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4;
+  @apply h-[74px] shrink-0;
+  @apply sticky top-0 z-10;
+}
+
+.app-content {
+  @apply relative flex-1 overflow-y-auto;
+  @apply w-full;
+}
+
+.content-wrapper {
+  @apply mx-auto flex w-full max-w-lg flex-col px-6 py-6;
+}
+
+.app-content::-webkit-scrollbar {
+  @apply w-2;
+}
+
+.app-content::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+.app-content::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-gray-300;
+}
+
+.app-content::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+.app-footer {
+  @apply min-h-[58px] shrink-0;
+  @apply sticky bottom-0 z-10;
+  @apply border-t border-gray-200 bg-white;
+  @apply rounded-bl-lg rounded-br-lg;
+  @apply flex items-center justify-between px-4;
+}
+
+.footer-wrapper {
+  @apply flex flex-1 flex-row items-center justify-end gap-4;
+  @apply w-full;
+
+  p-button,
+  button {
+    min-width: 200px;
+  }
+}
+
+// new layout styles
+.page-container {
+  @apply relative flex-1 overflow-y-auto bg-white px-4;
+}
+
+.page-container .page-content {
+  @apply mx-auto w-full max-w-[462px];
+}
+
+.page-footer-sticky {
+  @apply min-h-[60px] shrink-0;
+  @apply sticky bottom-0 z-10;
+  @apply border-t border-gray-200 bg-white;
+  @apply rounded-bl-lg rounded-br-lg;
+  @apply flex items-center justify-between px-4;
+}
+
+.page-footer {
+  @apply flex w-full flex-1 flex-row items-center justify-end gap-4 md:px-4;
+
+  // p-button,
+  // button {
+  //   @apply min-w-[200px];
+  // }
+
+  p-button .p-button-label {
+    @apply text-sm font-normal md:text-base;
+  }
+}

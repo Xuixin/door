@@ -1,0 +1,166 @@
+:root {
+  --p-button-label-font-weight: 400;
+  --p-overlay-modal-padding: 0px;
+  --p-breadcrumb-padding: 0px;
+  --p-breadcrumb-background: transparent;
+  --p-dialog-content-padding: 0px;
+  --p-drawer-width: 320px;
+  --p-drawer-content-padding: 0px;
+}
+
+.custom-dialog {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100% !important;
+}
+
+/* Override PrimeNG Breadcrumb */
+.p-breadcrumb {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  @apply text-xs;
+
+  .p-icon {
+    @apply h-3 w-3;
+  }
+}
+
+.global-dialog {
+  padding: 0 !important;
+}
+
+.installment-plan-dialog {
+  width: 860px !important;
+  min-height: 90% !important;
+}
+
+/* Custom Product Confirm Dialog */
+.product-confirm-dialog {
+  @apply w-full max-w-[360px] overflow-hidden rounded-lg;
+}
+
+.product-confirm-dialog .p-dialog-header {
+  @apply bg-white px-6 py-4 text-center;
+}
+
+.product-confirm-dialog .p-dialog-title {
+  @apply text-lg font-medium text-blue-800 md:text-xl;
+}
+
+.product-confirm-dialog .p-dialog-content {
+  @apply w-full overflow-hidden bg-white p-0;
+  max-width: 100%;
+}
+
+.p-confirmdialog-message {
+  @apply w-full;
+}
+
+/* Fix for long text in dialog messages */
+.p-confirmdialog-message p {
+  @apply overflow-hidden text-wrap break-words;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.product-confirm-dialog .p-dialog-footer {
+  @apply flex flex-row gap-2 bg-white p-4;
+}
+
+.product-confirm-dialog p-button {
+  @apply w-full rounded-lg;
+}
+
+p-inputtext,
+p-inputnumber,
+p-select,
+p-dropdown,
+input {
+  @apply w-full !text-sm;
+}
+
+p-select {
+  span {
+    @apply text-sm;
+  }
+}
+
+p-button {
+  .p-button-label {
+    @apply text-sm font-normal md:text-base;
+  }
+}
+
+/* PrimeNG Drawer Styles */
+.p-drawer {
+  .p-drawer-content {
+    @apply p-0;
+  }
+
+  .p-drawer-header {
+    @apply p-0;
+  }
+
+  .p-drawer-footer {
+    @apply p-0;
+  }
+
+  /* Ensure menu item borders are visible */
+  .menu-item-expanded-box {
+    border: 1px solid hsl(var(--secondary)) !important;
+  }
+
+  .menu-item-expanded-box.active {
+    border: 1px solid hsl(var(--primary)) !important;
+  }
+}
+
+p-message .p-message-text {
+  font-size: 12px !important;
+  line-height: 1rem !important;
+  @apply text-xs font-normal text-red-500;
+}
+
+/*
+ * ======================================================================================================
+ * Override PrimeNG dropdown styles to prevent overflow
+ * ======================================================================================================
+ */
+
+:host ::ng-deep .p-dropdown {
+  width: 100%;
+}
+
+:host ::ng-deep .p-dropdown-panel {
+  max-width: none;
+}
+
+/* Ensure dropdown items display properly */
+:host ::ng-deep .p-dropdown-items {
+  padding: 0;
+}
+
+:host ::ng-deep .p-dropdown-item {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Global z-index management */
+.p-toast-container {
+  z-index: 99999 !important;
+  position: fixed !important;
+}
+
+.p-dialog-mask {
+  z-index: 9000 !important;
+}
+
+.p-component-overlay {
+  z-index: 9500 !important;
+}
+
+/* ทำให้แน่ใจว่า toast จะอยู่บนสุดเสมอ */
+body .p-toast {
+  z-index: 99999 !important;
+}

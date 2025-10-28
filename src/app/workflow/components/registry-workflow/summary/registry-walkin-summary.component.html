@@ -1,0 +1,157 @@
+<div class="flex h-full flex-col bg-gray-50">
+  <!-- Header -->
+  <div
+    class="flex flex-col items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:px-8"
+  >
+    <div class="text-2xl font-bold text-blue-600 sm:text-3xl">
+      FastPass Registry
+    </div>
+    <div
+      class="flex-1 text-center text-base font-medium text-gray-700 sm:text-lg"
+    >
+      ระบบลงทะเบียนเข้าอาคาร
+    </div>
+    <div class="text-sm font-medium text-gray-600 sm:text-base">
+      {{ currentDateTime }}
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+    <div class="mx-auto max-w-4xl">
+      <!-- ID Card Section -->
+      <div
+        class="mb-4 flex min-h-[200px] flex-col rounded-lg bg-white p-4 shadow-sm sm:mb-6 sm:p-6"
+      >
+        <div class="mb-4 text-sm font-medium text-gray-700 sm:text-base">
+          รูปบัตรประชาชน
+          <span class="text-red-500">*</span>
+        </div>
+        <div
+          class="flex flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-all"
+          [class.border-gray-300]="!hasIdCard()"
+          [class.bg-gray-50]="!hasIdCard()"
+          [class.hover:border-blue-500]="!hasIdCard()"
+          [class.hover:bg-blue-50]="!hasIdCard()"
+          [class.border-blue-500]="hasIdCard()"
+          [class.bg-green-50]="hasIdCard()"
+          (click)="jumpToStep('id-card-capture')"
+          [style.background-image]="
+            hasIdCard() ? 'url(' + getIdCardImage() + ')' : 'none'
+          "
+          [style.background-size]="'cover'"
+          [style.background-position]="'center'"
+        >
+          <div
+            *ngIf="!hasIdCard()"
+            class="mb-2 text-4xl opacity-60 sm:text-5xl"
+          >
+            📸
+          </div>
+          <div
+            *ngIf="!hasIdCard()"
+            class="text-center text-xs sm:text-sm"
+            [class.text-gray-400]="!hasIdCard()"
+          >
+            แตะเพื่อถ่ายรูปบัตร
+          </div>
+        </div>
+      </div>
+
+      <!-- User Data Section -->
+      <div
+        class="mb-4 cursor-pointer rounded-lg bg-white p-4 shadow-sm transition-all hover:shadow-md sm:mb-6 sm:p-6"
+        (click)="jumpToStep('user-data')"
+      >
+        <div class="mb-4 text-sm font-medium text-gray-700 sm:text-base">
+          ข้อมูลผู้ใช้
+          <span class="text-red-500">*</span>
+        </div>
+        <div class="space-y-3">
+          <div
+            class="rounded bg-gray-100 px-3 py-2 text-sm sm:text-base"
+            [class.text-gray-400]="!hasUserData()"
+            [class.italic]="!hasUserData()"
+          >
+            {{
+              hasUserData() ? registryContext.user.name : "แตะเพื่อกรอกข้อมูล"
+            }}
+          </div>
+          <div class="rounded bg-gray-100 px-3 py-2">
+            <div class="mb-1 text-xs text-gray-600 sm:text-sm">
+              เลขบัตรประชาชน/รหัสนักศึกษา
+            </div>
+            <div
+              class="text-sm sm:text-base"
+              [class.text-gray-400]="!hasUserData()"
+              [class.italic]="!hasUserData()"
+            >
+              {{
+                hasUserData()
+                  ? registryContext.user.student_number
+                  : "แตะเพื่อกรอกข้อมูล"
+              }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Door Permission Section -->
+      <div
+        class="mb-4 cursor-pointer rounded-lg bg-white p-4 shadow-sm transition-all hover:shadow-md sm:mb-6 sm:p-6"
+        (click)="jumpToStep('door-permission')"
+      >
+        <div class="mb-4 text-sm font-medium text-gray-700 sm:text-base">
+          ประตูที่ต้องการเข้า
+          <span class="text-red-500">*</span>
+        </div>
+        <div
+          class="min-h-[60px] rounded border border-gray-300 p-4 transition-all"
+          [class.bg-gray-100]="hasDoorPermission()"
+          [class.border-blue-500]="hasDoorPermission()"
+        >
+          <div
+            *ngIf="hasDoorPermission(); else noDoor"
+            class="flex flex-wrap gap-2"
+          >
+            <span
+              *ngFor="let doorName of getDoorNames()"
+              class="inline-block rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 sm:text-sm"
+            >
+              {{ doorName }}
+            </span>
+          </div>
+          <ng-template #noDoor>
+            <div class="text-center text-sm text-gray-400">
+              แตะเพื่อเลือกประตู
+            </div>
+          </ng-template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div
+    class="flex flex-col items-center justify-between gap-4 border-t border-gray-200 bg-white px-4 py-4 shadow-lg sm:flex-row sm:px-8 sm:py-6"
+  >
+    <div class="text-xs text-gray-700 sm:text-base">ระบบลงทะเบียนเข้าอาคาร</div>
+    <div
+      class="flex w-full flex-wrap justify-center gap-2 sm:w-auto sm:justify-end sm:gap-4"
+    >
+      <p-button
+        label="กลับ"
+        severity="secondary"
+        size="small"
+        (onClick)="cancelAndClose()"
+      ></p-button>
+      <p-button
+        label="บันทึก"
+        severity="primary"
+        size="small"
+        (onClick)="submitRegistration()"
+        [disabled]="!isComplete()"
+      ></p-button>
+    </div>
+  </div>
+</div>

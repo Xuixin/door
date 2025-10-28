@@ -1,0 +1,47 @@
+.page-title {
+  @apply my-4 text-center text-xl font-semibold text-blue-800 md:text-2xl;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.page-description {
+  @apply mt-2 text-base font-normal leading-6 md:text-lg;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.page-title-description {
+  @apply mt-2 text-left text-base font-medium text-gray-900 md:text-lg;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.page-header {
+  @apply mb-4 text-sm font-normal text-gray-900 sm:text-base md:text-lg;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.page-value {
+  @apply mb-4 text-xs font-light text-gray-500 sm:text-sm md:text-base;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.page-title-description-center {
+  @apply mt-2 text-sm font-medium text-gray-900 sm:text-base md:text-lg lg:text-xl;
+  @apply text-center;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.page-description-center {
+  @apply text-center text-xs text-gray-900 sm:text-sm md:text-base;
+  @apply mt-2 flex flex-col;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+/* Header Styles */
+.section-title {
+  @apply mb-4 text-center text-lg font-bold text-blue-800 sm:text-xl md:text-2xl lg:text-3xl;
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.section-description {
+  @apply mt-2 text-center text-xs text-gray-900 sm:text-sm md:text-base;
+  @apply transition-all duration-300 ease-in-out;
+}

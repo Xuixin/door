@@ -1,0 +1,99 @@
+.form-container {
+  @apply mx-auto min-h-full max-w-md px-4 py-6;
+}
+
+.form-header {
+  @apply my-6;
+}
+
+.form-title {
+  @apply mb-8 text-center text-lg font-medium text-gray-900;
+}
+
+.checkbox-container {
+  @apply mt-2 flex items-start gap-2;
+}
+
+.checkbox-label {
+  @apply mt-[2px] text-base text-gray-900;
+}
+
+.form-fields {
+  @apply space-y-4;
+}
+
+.form-group {
+  @apply mb-4;
+}
+
+.form-label {
+  @apply mb-1 block text-sm font-normal text-gray-500;
+}
+
+.form-control {
+  @apply w-full;
+}
+
+.required {
+  @apply text-red-500;
+}
+
+.error-message {
+  @apply mt-2 block;
+}
+
+.form-actions {
+  @apply mt-8 flex justify-between gap-4;
+}
+
+.cancel-button {
+  @apply flex-1;
+}
+
+/**
+ * Form Field
+ */
+.form-field {
+  @apply m-2;
+
+  .field-header {
+    @apply flex items-center justify-between;
+
+    .field-title {
+      @apply my-2 text-base font-normal text-gray-900 md:text-lg;
+
+      .required {
+        @apply text-red-500;
+      }
+    }
+
+    .edit-button {
+      @apply cursor-pointer text-base font-normal text-blue-600;
+    }
+  }
+
+  .field-value {
+    @apply text-pretty text-sm text-gray-500 md:text-base;
+  }
+
+  .divider {
+    @apply mt-4;
+  }
+}
+
+/* Form Fields */
+.form-field-row {
+  @apply mb-2 flex w-full flex-row items-center justify-between last:mb-0;
+
+  .field-label {
+    @apply mb-1 text-sm text-gray-500 sm:mb-0 sm:w-1/2 md:text-base;
+  }
+
+  .required {
+    @apply ml-1 text-red-500;
+  }
+
+  .field-value {
+    @apply text-right text-sm text-gray-900 sm:w-1/2 md:text-base;
+  }
+}

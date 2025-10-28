@@ -1,0 +1,209 @@
+<div class="flex h-full flex-col bg-gray-50">
+  <!-- Header -->
+  <div
+    class="flex flex-col items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:px-8"
+  >
+    <div class="text-2xl font-bold text-blue-600 sm:text-3xl">
+      FastPass Registry
+    </div>
+    <div
+      class="flex-1 text-center text-base font-medium text-gray-700 sm:text-lg"
+    >
+      เลือกประตูที่ต้องการเข้า
+    </div>
+    <p-button
+      icon="pi pi-times-circle"
+      severity="secondary"
+      size="small"
+      [text]="true"
+      class="text-lg"
+      (onClick)="close()"
+    ></p-button>
+  </div>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+    <div class="mx-auto max-w-3xl">
+      <!-- Selection Summary Card -->
+      <div
+        class="mb-6 rounded-lg bg-blue-50 border-2 border-blue-200 p-4 sm:p-6"
+      >
+        <div
+          class="flex flex-col items-center gap-2 text-center sm:flex-row sm:text-left"
+        >
+          <div
+            class="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-3xl text-white sm:h-14 sm:w-14"
+          >
+            🚪
+          </div>
+          <div class="flex-1">
+            <div class="text-lg font-semibold text-blue-800 sm:text-xl">
+              เลือกแล้ว {{ getSelectedCount() }} ประตู
+            </div>
+            <div class="mt-1 text-xs text-blue-600 sm:text-sm">
+              กรุณาเลือกประตูที่ต้องการเข้า (สามารถเลือกได้หลายประตู)
+            </div>
+          </div>
+          <div
+            *ngIf="hasSelection()"
+            class="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white sm:text-base"
+          >
+            ✓ พร้อมดำเนินการ
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Message -->
+      <div class="mb-4 flex items-start gap-3 rounded-lg bg-gray-100 p-4">
+        <div class="text-xl">💡</div>
+        <div class="flex-1 text-xs text-gray-600 sm:text-sm">
+          <span class="font-medium">คำแนะนำ:</span>
+          คลิกที่การ์ดหรือช่องเลือกเพื่อเลือกประตูที่ต้องการเข้า
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div
+        *ngIf="loading()"
+        class="flex flex-col items-center justify-center py-12"
+      >
+        <div class="mb-4 text-4xl">⏳</div>
+        <div class="text-lg font-medium text-gray-700">
+          กำลังโหลดข้อมูลประตู...
+        </div>
+        <div class="mt-2 text-sm text-gray-500">กรุณารอสักครู่</div>
+      </div>
+
+      <!-- Error State -->
+      <div
+        *ngIf="loadError() && !loading()"
+        class="flex flex-col items-center justify-center py-12"
+      >
+        <div class="mb-4 text-4xl">⚠️</div>
+        <div class="text-lg font-medium text-red-700">{{ loadError() }}</div>
+        <div class="mt-4">
+          <p-button
+            label="ลองใหม่"
+            severity="secondary"
+            size="small"
+            (onClick)="retryLoadDoors()"
+          ></p-button>
+        </div>
+      </div>
+
+      <!-- Door List -->
+      <div *ngIf="!loading() && !loadError()" class="space-y-3 sm:space-y-4">
+        <div
+          *ngFor="let door of doors(); let i = index"
+          class="group relative cursor-pointer overflow-hidden rounded-lg border-2 bg-white shadow-sm transition-all duration-200 hover:shadow-md"
+          [class.border-gray-200]="!door.selected"
+          [class.hover:border-blue-400]="!door.selected"
+          [class.border-blue-500]="door.selected"
+          [class.bg-blue-50]="door.selected"
+          (click)="toggleDoor(door)"
+        >
+          <!-- Selection Indicator -->
+          <div
+            *ngIf="door.selected"
+            class="absolute right-0 top-0 h-0 w-0 border-l-[40px] border-t-[40px] border-l-transparent border-t-blue-500"
+          >
+            <span class="absolute -right-[32px] top-[-36px] text-sm text-white"
+              >✓</span
+            >
+          </div>
+
+          <div class="flex items-center gap-4 p-4 sm:p-5">
+            <!-- Checkbox -->
+            <div class="flex-shrink-0">
+              <input
+                type="checkbox"
+                class="h-6 w-6 cursor-pointer rounded border-2 border-gray-300 text-blue-600 transition-all focus:ring-2 focus:ring-blue-200 sm:h-7 sm:w-7"
+                [checked]="door.selected"
+                (click)="$event.stopPropagation()"
+                (change)="toggleDoor(door)"
+              />
+            </div>
+
+            <!-- Door Icon -->
+            <div
+              class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-2xl transition-all sm:h-14 sm:w-14 sm:text-3xl"
+              [class.bg-gray-100]="!door.selected"
+              [class.bg-blue-100]="door.selected"
+            >
+              <span [class.grayscale]="!door.selected">🚪</span>
+            </div>
+
+            <!-- Door Info -->
+            <div class="flex-1 min-w-0">
+              <div
+                class="text-base font-semibold transition-colors sm:text-lg"
+                [class.text-gray-800]="!door.selected"
+                [class.text-blue-800]="door.selected"
+              >
+                {{ door.name }}
+              </div>
+              <div class="mt-1 text-xs text-gray-500 sm:text-sm">
+                {{ door.description }}
+              </div>
+            </div>
+
+            <!-- Arrow Indicator -->
+            <div
+              class="flex-shrink-0 text-2xl opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              <span *ngIf="!door.selected">→</span>
+              <span *ngIf="door.selected" class="text-blue-600">✓</span>
+            </div>
+          </div>
+
+          <!-- Selected Highlight Bar -->
+          <div
+            *ngIf="door.selected"
+            class="h-1 bg-gradient-to-r from-blue-400 to-blue-600"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div
+        *ngIf="doors().length === 0 && !loading() && !loadError()"
+        class="mt-8 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white p-8 text-center sm:p-12"
+      >
+        <div class="mb-4 text-6xl opacity-50">🚪</div>
+        <div class="text-base font-medium text-gray-700 sm:text-lg">
+          ไม่พบข้อมูลประตู
+        </div>
+        <div class="mt-2 text-xs text-gray-500 sm:text-sm">
+          กรุณาติดต่อเจ้าหน้าที่หากต้องการความช่วยเหลือ
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div
+    class="flex flex-col items-center justify-between gap-4 border-t border-gray-200 bg-white px-4 py-4 shadow-lg sm:flex-row sm:px-8"
+  >
+    <div class="text-xs text-gray-700 sm:text-base">
+      <span *ngIf="!hasSelection()">⚠️ กรุณาเลือกอย่างน้อย 1 ประตู</span>
+      <span *ngIf="hasSelection()"
+        >เลือกแล้ว {{ getSelectedCount() }} ประตู</span
+      >
+    </div>
+    <div class="flex gap-2 sm:gap-4">
+      <p-button
+        label="ยกเลิก"
+        severity="secondary"
+        size="small"
+        (onClick)="close()"
+      ></p-button>
+      <p-button
+        label="เสร็จสิ้น"
+        severity="primary"
+        size="small"
+        (onClick)="saveAndClose()"
+        [disabled]="!hasSelection() || loading() || loadError()"
+      ></p-button>
+    </div>
+  </div>
+</div>

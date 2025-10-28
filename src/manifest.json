@@ -1,0 +1,16 @@
+{
+    "name": "Kiosk",
+    "short_name": "Kiosk",
+    "theme_color": "#000000",
+    "background_color": "#ffffff",
+    "display": "standalone",
+    "scope": "./",
+    "start_url": "./",
+    "icons": [
+        {
+            "src": "assets/icon/favicon.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
