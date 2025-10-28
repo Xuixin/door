@@ -53,7 +53,7 @@ export class HandshakeService {
    */
   getHandshakesByTxnId$(txnId: string): Observable<HandshakeDocument[]> {
     return this.handshakeCollection
-      .find({ selector: { txn_id: txnId } })
+      .find({ selector: { transaction_id: txnId } })
       .$.pipe(
         map((docs) => docs.map((doc) => doc.toJSON() as HandshakeDocument)),
       );
@@ -116,61 +116,7 @@ export class HandshakeService {
     const updatedEvents = [...handshake.events, event];
 
     return this.updateHandshake(id, {
-      events: updatedEvents,
-    });
-  }
-
-  /**
-   * Create or get handshake for transaction
-   */
-  async getOrCreateHandshakeForTransaction(
-    txnId: string,
-  ): Promise<HandshakeDocument> {
-    const existing = await this.handshakeCollection
-      .findOne({ selector: { txn_id: txnId } })
-      .exec();
-
-    if (existing) {
-      return existing.toJSON() as HandshakeDocument;
-    }
-
-    // Create new handshake
-    const newHandshake: Omit<
-      HandshakeDocument,
-      'client_created_at' | 'client_updated_at'
-    > = {
-      id: `handshake-${txnId}-${Date.now()}`,
-      txn_id: txnId,
-      state: {
-        server: false,
-        door: false,
-      },
-      events: [
-        {
-          type: 'CREATE',
-          at: Date.now().toString(),
-          actor: 'KIOSK-1', // TODO: Get actual kiosk ID from config
-        },
-      ],
-    };
-
-    return this.createHandshake(newHandshake);
-  }
-
-  /**
-   * Update handshake state
-   */
-  async updateState(
-    id: string,
-    state: Partial<HandshakeDocument['state']>,
-  ): Promise<HandshakeDocument> {
-    const handshake = await this.getHandshakeById(id);
-    if (!handshake) {
-      throw new Error(`Handshake with id ${id} not found`);
-    }
-
-    return this.updateHandshake(id, {
-      state: { ...handshake.state, ...state },
+      events: JSON.stringify(updatedEvents),
     });
   }
 }

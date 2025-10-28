@@ -9,7 +9,7 @@ status?: 'SUCCESS' | 'FAILED';
 export interface HANDSHAKE {
 id: string;
 txn_id: string;
-state: {
+้handshake: {
 server: boolean;
 door: boolean;
 };

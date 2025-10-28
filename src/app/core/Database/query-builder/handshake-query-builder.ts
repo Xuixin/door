@@ -4,19 +4,9 @@ export const PUSH_HANDSHAKE_MUTATION = `
   mutation PushHandshake($writeRows: [HandshakeInputPushRow!]!) {
     pushHandshake(input: $writeRows) {
       id
-      txn_id
-      state {
-        server
-        door
-        cloud
-      }
-      events {
-        type
-        at
-        reason
-        actor
-        status
-      }
+      transaction_id
+      handshake
+      events
       client_created_at
       client_updated_at
       server_created_at
@@ -30,23 +20,15 @@ export const PULL_HANDSHAKE_QUERY = `
     pullHandshake(input: $input) {
       documents {
         id
-        txn_id
-        state {
-          server
-          door
-          cloud
-        }
-        events {
-          type
-          at
-          reason
-          actor
-          status
-        }
+        transaction_id
+        handshake
+        events
         client_created_at
         client_updated_at
         server_created_at
         server_updated_at
+        diff_time_create
+        diff_time_update
         deleted
       }
       checkpoint {
@@ -62,23 +44,16 @@ export const STREAM_HANDSHAKE_SUBSCRIPTION = `
     streamHandshake {
       documents {
         id
-        txn_id
-        state {
-          server
-          door
-          cloud
-        }
-        events {
-          type
-          at
-          reason
-          actor
-          status
-        }
+        transaction_id
+        handshake
+        events
         client_created_at
         client_updated_at
         server_created_at
         server_updated_at
+        diff_time_create
+        diff_time_update
+        deleted
       }
       checkpoint {
         id

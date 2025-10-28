@@ -1,0 +1,160 @@
+// Door Selection Modal Styles
+.p-card {
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    transform: translateY(-2px);
+  }
+
+  &.ring-2 {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.15);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Animations
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.6s ease-out backwards;
+}
+
+// Hover scale effect
+.hover\:scale-102:hover {
+  transform: scale(1.02);
+}
+
+// Smooth transitions
+* {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+// Custom scrollbar
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+// PrimeNG button customization
+::ng-deep {
+  .p-button {
+    font-weight: 600;
+    transition: all 0.3s ease;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.3);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0);
+    }
+  }
+
+  .p-button-rounded {
+    padding: 0.75rem 1.5rem;
+  }
+}
+
+// Ripple effect styling
+::ng-deep {
+  .p-ripple {
+    overflow: hidden;
+    position: relative;
+  }
+}
+
+// Modal backdrop enhancement
+::ng-deep {
+  // Override global modal styles for door selection modal
+  ion-modal.door-selection-modal {
+    --width: 90%;
+    --height: 80%;
+    --border-radius: 16px;
+    --backdrop-opacity: 0.5;
+    --box-shadow:
+      0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  // Ensure backdrop is visible with higher specificity
+  ion-modal.door-selection-modal ion-backdrop {
+    background: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(2px);
+    z-index: 10;
+  }
+
+  // Modal container styling
+  ion-modal.door-selection-modal .modal-wrapper {
+    border-radius: 16px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    z-index: 11;
+    max-height: 80vh;
+    background: white;
+  }
+
+  // Force backdrop visibility with part selector
+  ion-modal.door-selection-modal::part(backdrop) {
+    background: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(2px);
+  }
+
+  // Additional backdrop styling
+  ion-modal.door-selection-modal .modal-shadow {
+    background: rgba(0, 0, 0, 0.5) !important;
+  }
+
+  // Ensure modal content is above backdrop
+  ion-modal.door-selection-modal ion-content {
+    z-index: 12;
+  }
+}

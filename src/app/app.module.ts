@@ -21,7 +21,7 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { MessageService } from 'primeng/api';
 import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { initDatabase, DatabaseService } from './core/Database/rxdb.service';
+import { DatabaseService } from './core/Database/rxdb.service';
 import { WorkflowPreloadService } from './flow-services/workflow-preload.service';
 import Aura from '@primeng/themes/aura';
 import { CommonModule } from '@angular/common';
@@ -41,13 +41,7 @@ import { CommonModule } from '@angular/common';
       useClass: IonicRouteStrategy,
     },
     provideIonicAngular(),
-    // * database
-    {
-      provide: APP_INITIALIZER,
-      useFactory: (injector: Injector) => () => initDatabase(injector),
-      multi: true,
-      deps: [Injector],
-    },
+    // * database - now initialized on-demand after door selection
     // * workflow preload
     {
       provide: APP_INITIALIZER,

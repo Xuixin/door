@@ -12,6 +12,7 @@ import {
   PULL_TRANSACTION_QUERY,
   STREAM_TRANSACTION_SUBSCRIPTION,
 } from '../query-builder/txn-query-builder';
+import { DoorPreferenceService } from 'src/app/services/door-preference.service';
 
 /**
  * Transaction-specific GraphQL replication service
@@ -24,7 +25,10 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
   private graphqlEndpoint: string = environment.apiUrl;
   private graphqlWsEndpoint: string = environment.wsUrl;
 
-  constructor(networkStatus: NetworkStatusService) {
+  constructor(
+    networkStatus: NetworkStatusService,
+    private doorPreferenceService: DoorPreferenceService,
+  ) {
     super(networkStatus);
   }
 
@@ -58,8 +62,9 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
 
       pull: {
         batchSize: 5,
-        queryBuilder: (checkpoint, limit) => {
+        queryBuilder: async (checkpoint, limit) => {
           console.log('🔵 Pull Query - checkpoint:', checkpoint);
+          const doorId = await this.doorPreferenceService.getDoorId();
 
           return {
             query: PULL_TRANSACTION_QUERY,
@@ -70,6 +75,10 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
                   server_updated_at: checkpoint?.server_updated_at || '0',
                 },
                 limit: limit || 5,
+                where: {
+                  door_id: doorId || '',
+                  status: 'IN,OUT',
+                },
               },
             },
           };
@@ -157,6 +166,8 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
                   doc.client_updated_at || Date.now().toString(),
                 server_created_at: doc.server_created_at,
                 server_updated_at: doc.server_updated_at,
+                diff_time_create: doc.diff_time_create || '0',
+                diff_time_update: doc.diff_time_update || '0',
                 deleted: docRow.assumedMasterState === null,
               },
             };

@@ -1,0 +1,175 @@
+<ion-content class="ion-no-padding">
+  <div class="bg-white flex flex-col max-h-[80vh]">
+    <!-- Simple Header -->
+    <div class="bg-white border-b border-gray-200 px-6 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"
+          >
+            <i class="pi pi-building text-blue-600 text-lg"></i>
+          </div>
+          <div>
+            <h1 class="text-xl font-semibold text-gray-900">เลือกประตู</h1>
+            <p class="text-sm text-gray-600">Door Selection</p>
+          </div>
+        </div>
+        <button
+          (click)="cancel()"
+          class="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
+        >
+          <i class="pi pi-times text-gray-500"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 p-6 overflow-y-auto">
+      <div class="max-w-4xl mx-auto">
+        <!-- Loading State -->
+        <div *ngIf="isLoading()" class="text-center py-8">
+          <div
+            class="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"
+          ></div>
+          <p class="mt-4 text-gray-600 font-medium">กำลังโหลดข้อมูลประตู...</p>
+        </div>
+
+        <!-- Error State -->
+        <div *ngIf="error() && !isLoading()" class="text-center py-8">
+          <div
+            class="w-16 h-16 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-4"
+          >
+            <i class="pi pi-exclamation-triangle text-2xl text-red-500"></i>
+          </div>
+          <h3 class="text-lg font-semibold text-gray-800 mb-2">
+            เกิดข้อผิดพลาด
+          </h3>
+          <p class="text-gray-600 mb-4 text-sm">
+            {{ error() }}
+          </p>
+          <p-button
+            label="ลองใหม่อีกครั้ง"
+            icon="pi pi-refresh"
+            severity="danger"
+            [rounded]="true"
+            (onClick)="retry()"
+            size="small"
+          ></p-button>
+        </div>
+
+        <!-- Door List -->
+        <div *ngIf="!isLoading() && !error()" class="space-y-6">
+          <!-- Title section -->
+          <div class="text-center mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-2">
+              เลือกประตูที่ต้องการใช้งาน
+            </h2>
+            <p class="text-gray-600 text-sm">
+              กรุณาเลือกประตูที่เครื่องนี้จะควบคุม
+            </p>
+          </div>
+
+          <!-- Door Cards Grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
+              *ngFor="let door of doors()"
+              class="cursor-pointer transition-all duration-200 hover:shadow-lg"
+              (click)="selectDoor(door.id, door.name)"
+            >
+              <div
+                [class]="
+                  'p-4 rounded-lg border-2 transition-all duration-200 ' +
+                  (isSelected(door.id)
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 bg-white hover:border-blue-300')
+                "
+              >
+                <div class="flex items-center gap-3">
+                  <div
+                    [class]="
+                      'w-12 h-12 rounded-lg flex items-center justify-center ' +
+                      (isSelected(door.id) ? 'bg-blue-500' : 'bg-gray-100')
+                    "
+                  >
+                    <i
+                      [class]="
+                        'pi pi-building text-lg ' +
+                        (isSelected(door.id) ? 'text-white' : 'text-gray-600')
+                      "
+                    ></i>
+                  </div>
+                  <div class="flex-1">
+                    <h3
+                      [class]="
+                        'font-semibold ' +
+                        (isSelected(door.id)
+                          ? 'text-blue-700'
+                          : 'text-gray-800')
+                      "
+                    >
+                      {{ door.name }}
+                    </h3>
+                    <p class="text-sm text-gray-600">{{ door.description }}</p>
+                  </div>
+                  <div *ngIf="isSelected(door.id)" class="text-blue-500">
+                    <i class="pi pi-check-circle text-lg"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div *ngIf="doors().length === 0" class="text-center py-8">
+            <div
+              class="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-inbox text-2xl text-gray-400"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">
+              ไม่พบข้อมูลประตู
+            </h3>
+            <p class="text-gray-600 text-sm">
+              กรุณาติดต่อเจ้าหน้าที่หากต้องการความช่วยเหลือ
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div
+      class="fixed bottom-0 right-0 w-full bg-gray-50 border-t border-gray-200 px-6 py-4"
+    >
+      <div class="flex justify-between items-center">
+        <!-- Status text -->
+        <div class="text-sm">
+          <span *ngIf="!selectedDoorId()" class="text-gray-600">
+            กรุณาเลือกประตู
+          </span>
+          <span *ngIf="selectedDoorId()" class="text-blue-600 font-medium">
+            เลือกแล้ว: {{ getSelectedDoorName() }}
+          </span>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="flex gap-2">
+          <p-button
+            label="ยกเลิก"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="cancel()"
+          ></p-button>
+          <p-button
+            label="ยืนยัน"
+            severity="primary"
+            size="small"
+            [disabled]="!selectedDoorId()"
+            (onClick)="confirmSelection()"
+          ></p-button>
+        </div>
+      </div>
+    </div>
+  </div>
+</ion-content>

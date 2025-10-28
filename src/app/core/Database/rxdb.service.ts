@@ -1,5 +1,6 @@
 import { Injector, Injectable, Signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { BehaviorSubject } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { TXN_SCHEMA, HANDSHAKE_SCHEMA } from '../schema';
@@ -12,10 +13,9 @@ import {
   HandshakeReplicationService,
 } from './replication';
 import { NetworkStatusService } from './network-status.service';
+import { DoorPreferenceService } from '../../services/door-preference.service';
 
 environment.addRxDBPlugins();
-
-const DATABASE_NAME = 'kiosk_db';
 
 const collectionsSettings = {
   txn: {
@@ -28,10 +28,16 @@ const collectionsSettings = {
 
 let GLOBAL_DB_SERVICE: DatabaseService | undefined;
 
-async function _create(injector: Injector): Promise<RxTxnsDatabase> {
+let DB_INSTANCE: RxTxnsDatabase | undefined;
+
+async function _create(
+  injector: Injector,
+  doorId: string,
+): Promise<RxTxnsDatabase> {
   environment.addRxDBPlugins();
 
-  console.log('DatabaseService: creating database..');
+  const databaseName = `door-${doorId}`;
+  console.log(`DatabaseService: creating database: ${databaseName}`);
 
   const reactivityFactory: RxReactivityFactory<Signal<any>> = {
     fromObservable(obs, initialValue: any) {
@@ -45,13 +51,13 @@ async function _create(injector: Injector): Promise<RxTxnsDatabase> {
   };
 
   const db = (await createRxDatabase<RxTxnsCollections>({
-    name: DATABASE_NAME,
+    name: databaseName,
     storage: environment.getRxStorage(),
     multiInstance: environment.multiInstance,
     reactivity: reactivityFactory,
   })) as RxTxnsDatabase;
 
-  console.log('DatabaseService: created database');
+  console.log(`DatabaseService: created database: ${databaseName}`);
 
   if (environment.multiInstance) {
     db.waitForLeadership().then(() => {
@@ -64,40 +70,97 @@ async function _create(injector: Injector): Promise<RxTxnsDatabase> {
 
   await db.addCollections(collectionsSettings);
 
-  // เริ่ม replication อัตโนมัติ - จะถูกสร้างโดย DatabaseService
-  console.log('DatabaseService: replication will be set up by DatabaseService');
+  console.log('DatabaseService: collections created');
 
   return db;
 }
 
-let initState: null | Promise<any> = null;
-let DB_INSTANCE: RxTxnsDatabase;
+@Injectable()
+export class DatabaseService {
+  private transactionReplicationService?: TransactionReplicationService;
+  private handshakeReplicationService?: HandshakeReplicationService;
+  private networkStatusService?: NetworkStatusService;
 
-export async function initDatabase(injector: Injector) {
-  if (!injector) {
-    throw new Error('initDatabase() injector missing');
+  // State management
+  private _isReady = false;
+  private _isInitializing = false;
+  private _currentDoorId?: string;
+  public initState$ = new BehaviorSubject<
+    'idle' | 'initializing' | 'ready' | 'error'
+  >('idle');
+
+  constructor(private injector: Injector) {
+    GLOBAL_DB_SERVICE = this;
   }
 
-  if (!initState) {
-    console.log('initDatabase()');
-    initState = _create(injector).then(async (db) => {
-      DB_INSTANCE = db;
-      // สร้าง replication หลังจากสร้าง database แล้ว
-      const networkStatusService = new NetworkStatusService();
+  setReplicationService(service: TransactionReplicationService) {
+    this.transactionReplicationService = service;
+  }
 
-      // Initialize replication services for all collections
+  setHandshakeReplicationService(service: HandshakeReplicationService) {
+    this.handshakeReplicationService = service;
+  }
+
+  get db(): RxTxnsDatabase {
+    if (!DB_INSTANCE || !this._isReady) {
+      throw new Error('Database not initialized. Please select a door first.');
+    }
+    return DB_INSTANCE;
+  }
+
+  get isInitialized(): boolean {
+    return this._isReady;
+  }
+
+  get isInitializing(): boolean {
+    return this._isInitializing;
+  }
+
+  get currentDoorId(): string | undefined {
+    return this._currentDoorId;
+  }
+
+  /**
+   * Initialize database with door ID
+   */
+  async initialize(doorId: string): Promise<void> {
+    // Check if already initializing
+    if (this._isInitializing) {
+      throw new Error('Database initialization already in progress');
+    }
+
+    // Check if already initialized with same door
+    if (this._isReady && this._currentDoorId === doorId) {
+      console.log('Database already initialized with same door ID');
+      return;
+    }
+
+    this._isInitializing = true;
+    this.initState$.next('initializing');
+
+    try {
+      console.log(`🚀 Initializing database for door: ${doorId}`);
+
+      // Create database
+      const db = await _create(this.injector, doorId);
+      DB_INSTANCE = db;
+
+      // Create replication services
+      this.networkStatusService = new NetworkStatusService();
+
       const transactionReplicationService = new TransactionReplicationService(
-        networkStatusService,
+        this.networkStatusService,
+        this.injector.get(DoorPreferenceService),
       );
       const handshakeReplicationService = new HandshakeReplicationService(
-        networkStatusService,
+        this.networkStatusService,
+        this.injector.get(DoorPreferenceService),
+        this,
       );
 
-      // Set replication services in database service
-      GLOBAL_DB_SERVICE?.setReplicationService(transactionReplicationService);
-      GLOBAL_DB_SERVICE?.setHandshakeReplicationService(
-        handshakeReplicationService,
-      );
+      // Set replication services
+      this.setReplicationService(transactionReplicationService);
+      this.setHandshakeReplicationService(handshakeReplicationService);
 
       // Register replications
       const txnReplication =
@@ -127,30 +190,65 @@ export async function initDatabase(injector: Injector) {
           'DatabaseService: Handshake replication not started (offline or error)',
         );
       }
-    });
-  }
-  await initState;
-}
 
-@Injectable()
-export class DatabaseService {
-  private transactionReplicationService?: TransactionReplicationService;
-  private handshakeReplicationService?: HandshakeReplicationService;
+      // Mark as ready
+      this._isReady = true;
+      this._currentDoorId = doorId;
+      this.initState$.next('ready');
 
-  constructor() {
-    GLOBAL_DB_SERVICE = this;
-  }
-
-  setReplicationService(service: TransactionReplicationService) {
-    this.transactionReplicationService = service;
-  }
-
-  setHandshakeReplicationService(service: HandshakeReplicationService) {
-    this.handshakeReplicationService = service;
+      console.log(`✅ Database initialized successfully for door: ${doorId}`);
+    } catch (error) {
+      console.error('❌ Database initialization failed:', error);
+      this._isReady = false;
+      this._currentDoorId = undefined;
+      this.initState$.next('error');
+      throw error;
+    } finally {
+      this._isInitializing = false;
+    }
   }
 
-  get db(): RxTxnsDatabase {
-    return DB_INSTANCE;
+  /**
+   * Destroy database and clean up resources
+   */
+  async destroy(): Promise<void> {
+    // Check if not initialized
+    if (!this._isReady) {
+      console.log('Database not initialized, nothing to destroy');
+      return;
+    }
+
+    // Check if initializing
+    if (this._isInitializing) {
+      throw new Error('Cannot destroy database while initializing');
+    }
+
+    try {
+      console.log('🗑️ Destroying database...');
+
+      // Stop replication first (critical order)
+      await this.stopReplication();
+
+      // Wait a bit for replication to fully stop
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Destroy database
+      if (DB_INSTANCE) {
+        await DB_INSTANCE.remove();
+        console.log('Database removed from IndexedDB');
+      }
+
+      // Reset state
+      DB_INSTANCE = undefined;
+      this._isReady = false;
+      this._currentDoorId = undefined;
+      this.initState$.next('idle');
+
+      console.log('✅ Database destroyed successfully');
+    } catch (error) {
+      console.error('❌ Error destroying database:', error);
+      throw error;
+    }
   }
 
   /**
@@ -165,6 +263,14 @@ export class DatabaseService {
     if (this.handshakeReplicationService) {
       await this.handshakeReplicationService.stopReplication();
       console.log('Handshake replication stopped');
+    }
+
+    // Unsubscribe from network status
+    if (this.transactionReplicationService) {
+      (this.transactionReplicationService as any).ngOnDestroy?.();
+    }
+    if (this.handshakeReplicationService) {
+      (this.handshakeReplicationService as any).ngOnDestroy?.();
     }
 
     console.log('All GraphQL replications stopped');

@@ -25,13 +25,16 @@ export interface HandshakeState {
 
 export interface HandshakeDocument {
   id: string;
-  txn_id: string;
-  state: HandshakeState;
-  events: HandshakeEvent[];
+  transaction_id: string;
+  handshake: string; // JSON string of HandshakeState
+  events: string; // JSON string of HandshakeEvent[]
   client_created_at: string;
   client_updated_at: string;
   server_created_at?: string;
   server_updated_at?: string;
+  diff_time_create?: string;
+  diff_time_update?: string;
+  // deleted: boolean;
 }
 
 export const HANDSHAKE_SCHEMA_LITERAL: RxJsonSchema<HandshakeDocument> = {
@@ -43,35 +46,25 @@ export const HANDSHAKE_SCHEMA_LITERAL: RxJsonSchema<HandshakeDocument> = {
   type: 'object',
   properties: {
     id: { type: 'string', maxLength: 100 },
-    txn_id: { type: 'string', maxLength: 100 },
-    state: {
-      type: 'object',
-      properties: {
-        server: { type: 'boolean' },
-        door: { type: 'boolean' },
-        cloud: { type: 'boolean' },
-      },
-    },
-    events: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          type: { type: 'string', maxLength: 20 },
-          at: { type: 'string', maxLength: 20 },
-          reason: { type: 'string', maxLength: 200 },
-          actor: { type: 'string', maxLength: 50 },
-          status: { type: 'string', maxLength: 20 },
-        },
-        required: ['type', 'at', 'actor'],
-      },
-    },
+    transaction_id: { type: 'string', maxLength: 100 },
+    handshake: { type: 'string' }, // JSON string of HandshakeState
+    events: { type: 'string' }, // JSON string of HandshakeEvent[]
     client_created_at: { type: 'string', maxLength: 20 },
     client_updated_at: { type: 'string', maxLength: 20 },
     server_created_at: { type: 'string', maxLength: 20 },
     server_updated_at: { type: 'string', maxLength: 20 },
+    diff_time_create: { type: 'string', maxLength: 20 },
+    diff_time_update: { type: 'string', maxLength: 20 },
   },
-  required: ['id', 'txn_id', 'state', 'events', 'client_created_at'],
+  required: [
+    'id',
+    'transaction_id',
+    'handshake',
+    'events',
+    'client_created_at',
+    'diff_time_create',
+    'diff_time_update',
+  ],
 };
 
 export const HANDSHAKE_SCHEMA = HANDSHAKE_SCHEMA_LITERAL;

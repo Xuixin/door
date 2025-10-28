@@ -26,6 +26,8 @@ export const TXN_SCHEMA_LITERAL = {
     client_updated_at: { type: 'string', maxLength: 20 },
     server_created_at: { type: 'string', maxLength: 20 },
     server_updated_at: { type: 'string', maxLength: 20 },
+    diff_time_create: { type: 'string', maxLength: 20 },
+    diff_time_update: { type: 'string', maxLength: 20 },
   },
 
   required: [
@@ -37,6 +39,8 @@ export const TXN_SCHEMA_LITERAL = {
     'door_permission',
     'status',
     'client_created_at',
+    'diff_time_create',
+    'diff_time_update',
   ],
 };
 export const txnSchema = toTypedRxJsonSchema(TXN_SCHEMA_LITERAL);

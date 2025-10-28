@@ -1,174 +1,289 @@
-<ion-content class="ion-no-padding">
+<ion-content class="ion-no-padding" [fullscreen]="true">
   <div
-    class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col"
+    class="h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex flex-col overflow-hidden"
   >
-    <!-- Header Section -->
-    <div class="bg-white shadow-md border-b-4 border-blue-600">
-      <div class="container mx-auto px-8 py-6">
+    <!-- Header with gradient -->
+    <div
+      class="relative bg-gradient-to-r from-blue-600 to-blue-700 shadow-xl overflow-hidden"
+    >
+      <div class="absolute inset-0 opacity-10">
+        <div
+          class="absolute w-96 h-96 -top-48 -left-48 bg-white rounded-full blur-3xl"
+        ></div>
+        <div
+          class="absolute w-96 h-96 -bottom-48 -right-48 bg-white rounded-full blur-3xl"
+        ></div>
+      </div>
+
+      <div class="container mx-auto px-6 py-3 relative">
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            <!-- University Logo Placeholder -->
-            <div
-              class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center"
-            >
-              <i class="pi pi-building text-3xl text-white"></i>
+          <!-- Title -->
+          <div class="flex items-center gap-5">
+            <div class="relative">
+              <div
+                class="absolute inset-0 bg-white rounded-xl blur-lg opacity-30"
+              ></div>
+              <div
+                class="relative w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/30 shadow-xl"
+              >
+                <i
+                  class="pi pi-building text-2xl text-white drop-shadow-lg"
+                ></i>
+              </div>
             </div>
             <div>
-              <h1 class="text-3xl font-bold text-gray-800">
-                ระบบลงทะเบียนเข้าอาคาร
+              <h1
+                class="text-2xl font-bold text-white drop-shadow-lg mb-1 tracking-tight"
+              >
+                ระบบควบคุมประตู [ {{currentDoorName()}} ]
               </h1>
-              <p class="text-gray-500 text-lg">FassPass Registry</p>
+              <p class="text-blue-100 text-sm font-medium">
+                Door Access Control
+              </p>
             </div>
           </div>
-          <div class="text-right">
-            <p class="text-sm text-gray-500">วันที่</p>
-            <p class="text-lg font-semibold text-gray-700">
-              {{ currentDate | date: 'dd/MM/yyyy' }}
-            </p>
-            <p class="text-2xl font-bold text-blue-600">
-              {{ currentTime | date: 'HH:mm' }}
-            </p>
+
+          <!-- Date/Time and Settings -->
+          <div class="flex items-center gap-3">
+            <div
+              class="text-right bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/20"
+            >
+              <p class="text-blue-100 text-xs font-medium">
+                {{ currentDate | date: 'dd MMM yyyy' }}
+              </p>
+              <p class="text-white text-lg font-bold tracking-wider">
+                {{ currentTime | date: 'HH:mm' }}
+              </p>
+            </div>
+
+            <!-- Door Change Button -->
+            <ion-button
+              (click)="changeDoor()"
+              fill="clear"
+              size="small"
+              class="text-white"
+            >
+              <ion-icon
+                slot="icon-only"
+                name="settings-outline"
+                class="text-lg"
+              ></ion-icon>
+            </ion-button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 flex items-center justify-center p-8">
-      <div class="w-full max-w-5xl">
-        <div class="bg-white rounded-lg shadow-md p-6 text-center">
-          <div class="text-3xl font-bold text-green-600">{{ inCount() }}</div>
-          <div class="text-gray-600">อยู่ในอาคาร</div>
-        </div>
-
-        <!-- Welcome Message -->
-        <div class="text-center mb-12">
-          <h2 class="text-4xl font-bold text-gray-800 mb-3">ยินดีต้อนรับ</h2>
-          <p class="text-xl text-gray-600">กรุณาเลือกวิธีการลงทะเบียน</p>
-        </div>
-
-        <!-- Registration Options -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <!-- Walk-in Registration Card -->
+    <div class="flex-1 flex items-center justify-center p-4">
+      <div class="w-full max-w-3xl">
+        <!-- Result Display (when checking or has result) -->
+        <div *ngIf="isChecking || accessResult()" class="mb-8 animate-fade-in">
+          <!-- Checking State -->
           <div
-            class="bg-white rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:scale-105 overflow-hidden border-2 border-transparent hover:border-blue-500"
+            *ngIf="isChecking"
+            class="bg-white rounded-3xl shadow-2xl p-12 text-center"
           >
-            <div
-              class="bg-gradient-to-br from-blue-600 to-blue-700 p-8 text-white"
-            >
-              <div class="flex justify-center mb-4">
-                <div
-                  class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"
-                >
-                  <i class="pi pi-user-plus text-5xl"></i>
-                </div>
-              </div>
-              <h3 class="text-3xl font-bold text-center mb-2">Walk-in</h3>
-              <p class="text-center text-blue-100 text-lg">ลงทะเบียนใหม่</p>
+            <div class="relative inline-block mb-6">
+              <div
+                class="absolute inset-0 bg-blue-500 rounded-full blur-2xl opacity-20 animate-pulse"
+              ></div>
+              <div
+                class="relative w-24 h-24 border-8 border-blue-200 border-t-blue-600 rounded-full animate-spin"
+              ></div>
             </div>
-            <div class="p-8">
-              <ul class="space-y-3 mb-8">
-                <li class="flex items-start gap-3">
-                  <i class="pi pi-check-circle text-green-500 text-xl mt-1"></i>
-                  <span class="text-gray-700 text-lg"
-                    >สำหรับผู้มาเยือนทั่วไป</span
-                  >
-                </li>
-                <li class="flex items-start gap-3">
-                  <i class="pi pi-check-circle text-green-500 text-xl mt-1"></i>
-                  <span class="text-gray-700 text-lg"
-                    >กรอกข้อมูลลงทะเบียนทันที</span
-                  >
-                </li>
-                <li class="flex items-start gap-3">
-                  <i class="pi pi-check-circle text-green-500 text-xl mt-1"></i>
-                  <span class="text-gray-700 text-lg"
-                    >เลือกห้องที่ต้องการเข้าพบ</span
-                  >
-                </li>
-              </ul>
-              <p-button
-                label="เริ่มลงทะเบียน Walk-in"
-                (onClick)="startRegistryWorkflow()"
-                severity="primary"
-                size="large"
-                styleClass="w-full"
-                [style]="{'height': '60px', 'font-size': '1.25rem'}"
-              >
-                <ng-template pTemplate="icon">
-                  <i class="pi pi-arrow-right ml-2"></i>
-                </ng-template>
-              </p-button>
-            </div>
+            <h3 class="text-3xl font-bold text-gray-800 mb-2">
+              กำลังตรวจสอบสิทธิ์...
+            </h3>
+            <p class="text-xl text-gray-600">
+              รหัสนักศึกษา: {{ studentNumber }}
+            </p>
           </div>
 
-          <!-- Pre-registered Card -->
+          <!-- Success State -->
           <div
-            class="bg-white rounded-3xl shadow-2xl overflow-hidden border-2 border-gray-200 opacity-60"
+            *ngIf="!isChecking && accessResult()?.hasAccess"
+            class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-3xl shadow-2xl p-12 text-center border-4 border-green-400 animate-scale-in"
           >
-            <div
-              class="bg-gradient-to-br from-gray-400 to-gray-500 p-8 text-white"
-            >
-              <div class="flex justify-center mb-4">
-                <div
-                  class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"
-                >
-                  <i class="pi pi-mobile text-5xl"></i>
-                </div>
+            <div class="relative inline-block mb-6">
+              <div
+                class="absolute inset-0 bg-green-500 rounded-full blur-3xl opacity-30 animate-pulse"
+              ></div>
+              <div
+                class="relative w-32 h-32 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-2xl"
+              >
+                <i class="pi pi-check text-6xl text-white"></i>
               </div>
-              <h3 class="text-3xl font-bold text-center mb-2">มีการนัดหมาย</h3>
-              <p class="text-center text-gray-100 text-lg">
-                ลงทะเบียนผ่านมือถือแล้ว
+            </div>
+
+            <h3 class="text-4xl font-bold text-green-700 mb-4">
+              ✓ อนุญาตให้เข้า
+            </h3>
+            <div class="bg-white rounded-2xl p-6 mb-4 shadow-lg">
+              <p class="text-3xl font-bold text-gray-800 mb-2">
+                {{ accessResult()?.studentName }}
+              </p>
+              <p class="text-xl text-gray-600">
+                รหัสนักศึกษา: {{ studentNumber }}
               </p>
             </div>
-            <div class="p-8">
-              <ul class="space-y-3 mb-8">
-                <li class="flex items-start gap-3">
-                  <i class="pi pi-check-circle text-gray-400 text-xl mt-1"></i>
-                  <span class="text-gray-500 text-lg"
-                    >สำหรับผู้ที่ลงทะเบียนล่วงหน้า</span
-                  >
-                </li>
-                <li class="flex items-start gap-3">
-                  <i class="pi pi-check-circle text-gray-400 text-xl mt-1"></i>
-                  <span class="text-gray-500 text-lg">ยืนยันการเข้าอาคาร</span>
-                </li>
-                <li class="flex items-start gap-3">
-                  <i class="pi pi-check-circle text-gray-400 text-xl mt-1"></i>
-                  <span class="text-gray-500 text-lg">รวดเร็วและสะดวก</span>
-                </li>
-              </ul>
-              <p-button
-                label="ยืนยันการเข้า"
-                [disabled]="true"
-                severity="secondary"
-                size="large"
-                styleClass="w-full"
-                [style]="{'height': '60px', 'font-size': '1.25rem'}"
-              >
-                <ng-template pTemplate="icon">
-                  <i class="pi pi-lock ml-2"></i>
-                </ng-template>
-              </p-button>
-              <p class="text-center text-sm text-gray-400 mt-3">
-                <i class="pi pi-info-circle mr-1"></i>
-                ฟีเจอร์นี้จะเปิดใช้งานในเร็วๆ นี้
+            <div class="bg-green-100 rounded-xl p-4">
+              <p class="text-lg text-green-800 font-semibold">
+                <i class="pi pi-map-marker mr-2"></i>{{ currentDoorName() }}
               </p>
             </div>
           </div>
-        </div>
 
-        <!-- Help Section -->
-        <div class="mt-12 text-center">
+          <!-- Denied State -->
           <div
-            class="inline-flex items-center gap-3 bg-blue-50 px-6 py-4 rounded-full border border-blue-200"
+            *ngIf="!isChecking && !accessResult()?.hasAccess"
+            class="bg-gradient-to-br from-red-50 to-rose-50 rounded-3xl shadow-2xl p-12 text-center border-4 border-red-400 animate-scale-in"
           >
-            <i class="pi pi-question-circle text-blue-600 text-2xl"></i>
-            <span class="text-gray-700 text-lg"
-              >ต้องการความช่วยเหลือ? กรุณาติดต่อเจ้าหน้าที่ประจำจุด</span
-            >
+            <div class="relative inline-block mb-6">
+              <div
+                class="absolute inset-0 bg-red-500 rounded-full blur-3xl opacity-30 animate-pulse"
+              ></div>
+              <div
+                class="relative w-32 h-32 bg-gradient-to-br from-red-400 to-red-600 rounded-full flex items-center justify-center shadow-2xl"
+              >
+                <i class="pi pi-times text-6xl text-white"></i>
+              </div>
+            </div>
+
+            <h3 class="text-4xl font-bold text-red-700 mb-4">
+              ✕ ไม่อนุญาตให้เข้า
+            </h3>
+            <div class="bg-white rounded-2xl p-6 mb-4 shadow-lg">
+              <p
+                class="text-2xl font-bold text-gray-800 mb-2"
+                *ngIf="accessResult()?.studentName"
+              >
+                {{ accessResult()?.studentName }}
+              </p>
+              <p class="text-xl text-gray-600 mb-2">
+                รหัสนักศึกษา: {{ studentNumber }}
+              </p>
+              <div class="bg-red-100 rounded-xl p-4 mt-4">
+                <p class="text-lg text-red-800 font-semibold">
+                  <i class="pi pi-exclamation-triangle mr-2"></i>{{
+                  accessResult()?.message }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
+
+        <!-- Input Card (always visible when no result) -->
+        <div
+          *ngIf="!isChecking && !accessResult()"
+          class="bg-white rounded-2xl shadow-xl p-6 animate-fade-in"
+        >
+          <div class="text-center mb-6">
+            <div class="relative inline-block mb-4">
+              <div
+                class="absolute inset-0 bg-blue-500 rounded-full blur-xl opacity-20"
+              ></div>
+              <div
+                class="relative w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center shadow-lg"
+              >
+                <i class="pi pi-id-card text-3xl text-blue-600"></i>
+              </div>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">
+              ตรวจสอบสิทธิ์เข้า
+            </h2>
+            <p class="text-lg text-gray-600">กรุณากรอกรหัสนักศึกษา</p>
+          </div>
+
+          <!-- Student ID Input -->
+          <div class="mb-4">
+            <label
+              class="block text-base font-semibold text-gray-700 mb-2 text-center"
+            >
+              รหัสนักศึกษา / Student ID
+            </label>
+            <input
+              #studentInput
+              type="text"
+              [(ngModel)]="studentNumber"
+              placeholder="กรอกรหัสนักศึกษา..."
+              class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-xl text-center font-bold tracking-wider transition-all"
+              (keyup.enter)="checkAccess()"
+              [disabled]="isChecking"
+              inputmode="numeric"
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Numpad (optional, for touch screen) -->
+          <div class="grid grid-cols-3 gap-3 mb-4">
+            <p-button
+              *ngFor="let num of [1,2,3,4,5,6,7,8,9]"
+              (onClick)="addNumber(num)"
+              [label]="num.toString()"
+              severity="secondary"
+              size="large"
+              [rounded]="true"
+              styleClass="numpad-button"
+            ></p-button>
+            <button
+              (click)="clearInput()"
+              class="numpad-button-custom bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xl rounded-xl transition-all active:scale-95 shadow-md hover:shadow-lg border-2 border-red-100"
+              pRipple
+            >
+              <i class="pi pi-times text-2xl"></i>
+            </button>
+            <p-button
+              (onClick)="addNumber(0)"
+              label="0"
+              severity="secondary"
+              size="large"
+              [rounded]="true"
+              styleClass="numpad-button-zero"
+            ></p-button>
+            <button
+              (click)="backspace()"
+              class="numpad-button-custom bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-600 font-bold text-xl rounded-xl transition-all active:scale-95 shadow-md hover:shadow-lg border-2 border-gray-200"
+              pRipple
+            >
+              <i class="pi pi-arrow-left text-2xl"></i>
+            </button>
+          </div>
+
+          <!-- Check Button -->
+          <p-button
+            (onClick)="checkAccess()"
+            [disabled]="!studentNumber || isChecking"
+            label="ตรวจสอบสิทธิ์"
+            icon="pi pi-search"
+            severity="primary"
+            size="small"
+            [rounded]="true"
+            styleClass="w-full"
+          ></p-button>
+        </div>
+
+        <!-- Stats Display -->
+        <!-- <div class="grid grid-cols-2 gap-6 mt-8">
+          <div
+            class="bg-white rounded-2xl shadow-lg p-6 text-center transform hover:scale-105 transition-transform"
+          >
+            <div class="text-5xl font-bold text-green-600 mb-2">
+              {{ stats().in }}
+            </div>
+            <div class="text-gray-600 text-lg font-medium">อยู่ในอาคาร</div>
+            <div class="text-gray-500 text-sm mt-1">Currently Inside</div>
+          </div>
+          <div
+            class="bg-white rounded-2xl shadow-lg p-6 text-center transform hover:scale-105 transition-transform"
+          >
+            <div class="text-5xl font-bold text-blue-600 mb-2">
+              {{ stats().total }}
+            </div>
+            <div class="text-gray-600 text-lg font-medium">ทั้งหมด</div>
+            <div class="text-gray-500 text-sm mt-1">Total Registered</div>
+          </div>
+        </div> -->
       </div>
     </div>
   </div>
