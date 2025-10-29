@@ -204,24 +204,14 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
             return;
           }
 
-          // 6. Check if handshake already has door acknowledgment
-          const oldHandshake = handshake.handshake;
-          if (oldHandshake.includes(`${doorId} ok`)) {
-            console.log(
-              `Handshake already has door acknowledgment for ${doorId}, skipping update`,
-            );
-            return;
-          }
-
-          // 7. Update handshake string
-          const newHandshake = `,${doorId} ok`;
-
-          // 8. Update events array
-          let eventsArray;
+          // 6. Parse and validate events array
+          let eventsArray: any[] = [];
           try {
             console.log('Parsing events field:', handshake.events);
-            eventsArray = JSON.parse(handshake.events);
-            if (!Array.isArray(eventsArray)) {
+            const parsed = JSON.parse(handshake.events);
+            if (Array.isArray(parsed)) {
+              eventsArray = parsed;
+            } else {
               console.warn('Events field is not an array, creating new array');
               eventsArray = [];
             }
@@ -235,7 +225,7 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
             eventsArray = [];
           }
 
-          // Check if RECEIVE event already exists for this door
+          // 7. Check if RECEIVE event already exists for this door
           const hasReceiveEvent = eventsArray.some(
             (event: any) =>
               event.type === 'RECEIVE' && event.actor === `DOOR-${doorId}`,
@@ -248,19 +238,118 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
             return;
           }
 
-          eventsArray.push({
+          // Parse existing handshake data - handle malformed JSON
+          let hasHandshake: any = {};
+          try {
+            const handshakeValue = handshake.handshake || '{}';
+
+            // Try to parse as single JSON object first
+            try {
+              hasHandshake = JSON.parse(handshakeValue);
+
+              // Validate it's an object (not array)
+              if (
+                !hasHandshake ||
+                typeof hasHandshake !== 'object' ||
+                Array.isArray(hasHandshake)
+              ) {
+                throw new Error('Parsed value is not an object');
+              }
+            } catch (firstParseError) {
+              // If parsing fails, try to extract valid JSON objects from malformed data
+              console.warn(
+                'Initial parse failed, trying to extract valid JSON objects. Error:',
+                firstParseError,
+              );
+
+              // Extract all complete JSON objects from the malformed string
+              const jsonObjects: any[] = [];
+              let start = -1;
+              let depth = 0;
+
+              for (let i = 0; i < handshakeValue.length; i++) {
+                if (handshakeValue[i] === '{') {
+                  if (start === -1) {
+                    start = i;
+                  }
+                  depth++;
+                } else if (handshakeValue[i] === '}') {
+                  depth--;
+                  if (depth === 0 && start !== -1) {
+                    // Found a complete JSON object
+                    const jsonStr = handshakeValue.substring(start, i + 1);
+                    try {
+                      const parsed = JSON.parse(jsonStr);
+                      if (
+                        parsed &&
+                        typeof parsed === 'object' &&
+                        !Array.isArray(parsed)
+                      ) {
+                        jsonObjects.push(parsed);
+                      }
+                    } catch (e) {
+                      // Skip invalid JSON strings
+                    }
+                    start = -1;
+                  }
+                }
+              }
+
+              // Merge all valid objects (later ones override earlier ones)
+              if (jsonObjects.length > 0) {
+                hasHandshake = Object.assign({}, ...jsonObjects);
+                console.log(
+                  'Successfully extracted and merged',
+                  jsonObjects.length,
+                  'JSON objects from malformed handshake data',
+                );
+              } else {
+                hasHandshake = {};
+              }
+            }
+          } catch (parseError) {
+            console.error(
+              'Failed to parse existing handshake, initializing new handshake object. Error:',
+              parseError,
+              'Handshake value:',
+              handshake.handshake,
+            );
+            hasHandshake = {};
+          }
+
+          // Check if door already has acknowledgment - check if value exists and is 'ok'
+          if (hasHandshake && hasHandshake[doorId] === 'ok') {
+            console.log(
+              `Handshake already has door acknowledgment for ${doorId}, skipping update`,
+            );
+            return;
+          }
+
+          // Merge existing handshake data with new door acknowledgment
+          const updatedHandshake = {
+            [doorId]: 'ok',
+          };
+          let newHandshake = JSON.stringify(updatedHandshake);
+
+          console.log('Updating handshake:', {
+            doorId,
+            existing: hasHandshake,
+            updated: updatedHandshake,
+          });
+
+          // 8. Create new RECEIVE event (single object only)
+          const newEvent = JSON.stringify({
             type: 'RECEIVE',
             at: Date.now().toString(),
             actor: `DOOR-${doorId}`,
             status: 'SUCCESS',
           });
-          const newEvents = JSON.stringify(eventsArray);
 
-          // 9. Update document
+          // 10. Update document - send the updated events array (backend will merge)
           await handshake.update({
             $set: {
               handshake: newHandshake,
-              events: newEvents,
+              events: newEvent,
               client_updated_at: Date.now().toString(),
             },
           });
