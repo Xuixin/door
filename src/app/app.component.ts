@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { DatabaseService } from './core/Database/rxdb.service';
 import { DoorPreferenceService } from './services/door-preference.service';
+import { ClientEventLoggingService } from './core/monitoring/client-event-logging.service';
 import {
   ModalController,
   LoadingController,
@@ -23,6 +24,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private modalController: ModalController,
     private loadingController: LoadingController,
     private alertController: AlertController,
+    private clientEventLoggingService: ClientEventLoggingService,
   ) {}
 
   async ngOnInit() {
@@ -97,6 +99,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.databaseService.currentDoorId === doorId
       ) {
         console.log('Database already initialized with same door');
+        await this.clientEventLoggingService.init();
         await loading.dismiss();
         return;
       }
@@ -104,6 +107,9 @@ export class AppComponent implements OnInit, OnDestroy {
       // Initialize database
       await this.databaseService.initialize(doorId);
       console.log(`✅ Database initialized successfully for door: ${doorId}`);
+
+      // Start client event logging after DB is ready
+      await this.clientEventLoggingService.init();
 
       await loading.dismiss();
     } catch (error) {

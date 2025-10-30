@@ -24,7 +24,6 @@ import { providePrimeNG } from 'primeng/config';
 import { DatabaseService } from './core/Database/rxdb.service';
 import { WorkflowPreloadService } from './flow-services/workflow-preload.service';
 import Aura from '@primeng/themes/aura';
-import { CommonModule } from '@angular/common';
 
 @NgModule({
   declarations: [AppComponent],
@@ -52,6 +51,7 @@ import { CommonModule } from '@angular/common';
       multi: true,
       deps: [WorkflowPreloadService],
     },
+
     DatabaseService,
     WorkflowPreloadService,
     // * animations

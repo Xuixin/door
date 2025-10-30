@@ -4,6 +4,7 @@ import { BehaviorSubject } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { TXN_SCHEMA, HANDSHAKE_SCHEMA } from '../schema';
+import { LOG_CLIENT_SCHEMA } from '../schema/log-client.schema';
 
 import { RxReactivityFactory, createRxDatabase } from 'rxdb/plugins/core';
 
@@ -23,6 +24,9 @@ const collectionsSettings = {
   },
   handshake: {
     schema: HANDSHAKE_SCHEMA as any,
+  },
+  log_client: {
+    schema: LOG_CLIENT_SCHEMA as any,
   },
 };
 
