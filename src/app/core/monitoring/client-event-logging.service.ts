@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core';
 import { Network } from '@capacitor/network';
 import { LogClientFacade } from '../Database/facade/log-client.service';
 import { NetworkStatusService } from '../Database/network-status.service';
+import { ClientIdentityService } from '../identity/client-identity.service';
 
 @Injectable({ providedIn: 'root' })
 export class ClientEventLoggingService {
@@ -12,6 +13,7 @@ export class ClientEventLoggingService {
   constructor(
     private readonly logs: LogClientFacade,
     private readonly networkStatus: NetworkStatusService,
+    private readonly identity: ClientIdentityService,
   ) {}
 
   async init(): Promise<void> {
@@ -20,7 +22,11 @@ export class ClientEventLoggingService {
 
     // Only network events; create log only if latest differs
     Network.addListener('networkStatusChange', async (st) => {
-      const clientId = await this.getClientId();
+      const clientId = await this.identity.getClientId();
+      if (!clientId) {
+        // Can't log if client ID is null
+        return;
+      }
       const status: 'ONLINE' | 'OFFLINE' = st.connected ? 'ONLINE' : 'OFFLINE';
       const last = await this.logs.getLastByClient(clientId);
       if (last?.status === status) {
@@ -28,23 +34,12 @@ export class ClientEventLoggingService {
       }
       await this.logs.append({
         client_id: clientId,
-        type: 'KIOSK',
+        type: this.identity.getClientType() as any,
         status,
         meta_data: status, // meta only ONLINE/OFFLINE
         client_created_at: Date.now().toString(),
       });
       this.lastStatus = status;
     });
-  }
-
-  private async getClientId(): Promise<string> {
-    // TODO: integrate real device ID; for now a stable localStorage key
-    const KEY = 'kiosk_device_id';
-    let id = localStorage.getItem(KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(KEY, id);
-    }
-    return id;
   }
 }

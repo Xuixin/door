@@ -7,8 +7,15 @@ import { NetworkStatusService } from '../network-status.service';
 import { BaseReplicationService } from './base-replication.service';
 import { HandshakeDocument } from '../../schema';
 import { handshakeQueryBuilder } from '../query-builder/handshake-query-builder';
-import { DoorPreferenceService } from 'src/app/services/door-preference.service';
 import { DatabaseService } from '../rxdb.service';
+import { parseEventsArray, parseHandshakeField } from '../utils/received-parse-utils';
+import {
+  validateDoorPermission,
+  hasReceiveEvent,
+  hasDoorAcknowledgment,
+} from '../utils/received-validate-utils';
+import { updateHandshake } from '../utils/received-update-utils';
+import { ClientIdentityService } from '../../identity/client-identity.service';
 
 /**
  * Handshake-specific GraphQL replication service
@@ -23,11 +30,12 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
 
   constructor(
     networkStatus: NetworkStatusService,
-    private doorPreferenceService: DoorPreferenceService,
+    private clientIdentityService: ClientIdentityService,
     private databaseService: DatabaseService,
   ) {
     super(networkStatus);
   }
+
 
   /**
    * Setup handshake-specific GraphQL replication
@@ -59,7 +67,7 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
         batchSize: 10,
         queryBuilder: async (checkpoint, limit) => {
           console.log('🔵 Pull Query - checkpoint:', checkpoint);
-          const doorId = await this.doorPreferenceService.getDoorId();
+          const clientId = await this.clientIdentityService.getClientId();
 
           return {
             query: handshakeQueryBuilder.getPullQuery(),
@@ -151,217 +159,9 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
         console.error('Handshake Replication error:', error);
       });
 
-      this.replicationState.received$.subscribe(async (received) => {
-        console.log('Handshake Replication received:', received);
-
-        // 1. Check if transaction_id exists
-        if (!received.transaction_id) return;
-
-        try {
-          // 2. Find transaction
-          const txn = await this.databaseService.db.txn
-            .findOne({ selector: { id: received.transaction_id } } as any)
-            .exec();
-
-          if (!txn) {
-            console.warn('Transaction not found:', received.transaction_id);
-            return;
-          }
-
-          // 3. Get door ID
-          const doorId = await this.doorPreferenceService.getDoorId();
-          if (!doorId) {
-            console.error('Door ID not found');
-            return;
-          }
-
-          // 4. Check if transaction has permission for this door
-          const doorPermissions = Array.isArray((txn as any).door_permission)
-            ? (txn as any).door_permission
-            : (txn as any).door_permission
-                .split(',')
-                .map((s: string) => s.trim());
-
-          if (!doorPermissions.includes(doorId)) {
-            console.warn(
-              `Transaction ${received.transaction_id} does not have permission for door ${doorId}`,
-            );
-            return;
-          }
-
-          // 5. Find handshake
-          const handshake = await this.databaseService.db.handshake
-            .findOne({
-              selector: { transaction_id: received.transaction_id },
-            } as any)
-            .exec();
-
-          if (!handshake) {
-            console.warn(
-              'Handshake not found for transaction:',
-              received.transaction_id,
-            );
-            return;
-          }
-
-          // 6. Parse and validate events array
-          let eventsArray: any[] = [];
-          try {
-            console.log('Parsing events field:', handshake.events);
-            const parsed = JSON.parse(handshake.events);
-            if (Array.isArray(parsed)) {
-              eventsArray = parsed;
-            } else {
-              console.warn('Events field is not an array, creating new array');
-              eventsArray = [];
-            }
-          } catch (error) {
-            console.warn(
-              'Failed to parse events JSON, creating new array. Events value:',
-              handshake.events,
-              'Error:',
-              error,
-            );
-            eventsArray = [];
-          }
-
-          // 7. Check if RECEIVE event already exists for this door
-          const hasReceiveEvent = eventsArray.some(
-            (event: any) =>
-              event.type === 'RECEIVE' && event.actor === `DOOR-${doorId}`,
-          );
-
-          if (hasReceiveEvent) {
-            console.log(
-              `RECEIVE event already exists for DOOR-${doorId}, skipping event addition`,
-            );
-            return;
-          }
-
-          // Parse existing handshake data - handle malformed JSON
-          let hasHandshake: any = {};
-          try {
-            const handshakeValue = handshake.handshake || '{}';
-
-            // Try to parse as single JSON object first
-            try {
-              hasHandshake = JSON.parse(handshakeValue);
-
-              // Validate it's an object (not array)
-              if (
-                !hasHandshake ||
-                typeof hasHandshake !== 'object' ||
-                Array.isArray(hasHandshake)
-              ) {
-                throw new Error('Parsed value is not an object');
-              }
-            } catch (firstParseError) {
-              // If parsing fails, try to extract valid JSON objects from malformed data
-              console.warn(
-                'Initial parse failed, trying to extract valid JSON objects. Error:',
-                firstParseError,
-              );
-
-              // Extract all complete JSON objects from the malformed string
-              const jsonObjects: any[] = [];
-              let start = -1;
-              let depth = 0;
-
-              for (let i = 0; i < handshakeValue.length; i++) {
-                if (handshakeValue[i] === '{') {
-                  if (start === -1) {
-                    start = i;
-                  }
-                  depth++;
-                } else if (handshakeValue[i] === '}') {
-                  depth--;
-                  if (depth === 0 && start !== -1) {
-                    // Found a complete JSON object
-                    const jsonStr = handshakeValue.substring(start, i + 1);
-                    try {
-                      const parsed = JSON.parse(jsonStr);
-                      if (
-                        parsed &&
-                        typeof parsed === 'object' &&
-                        !Array.isArray(parsed)
-                      ) {
-                        jsonObjects.push(parsed);
-                      }
-                    } catch (e) {
-                      // Skip invalid JSON strings
-                    }
-                    start = -1;
-                  }
-                }
-              }
-
-              // Merge all valid objects (later ones override earlier ones)
-              if (jsonObjects.length > 0) {
-                hasHandshake = Object.assign({}, ...jsonObjects);
-                console.log(
-                  'Successfully extracted and merged',
-                  jsonObjects.length,
-                  'JSON objects from malformed handshake data',
-                );
-              } else {
-                hasHandshake = {};
-              }
-            }
-          } catch (parseError) {
-            console.error(
-              'Failed to parse existing handshake, initializing new handshake object. Error:',
-              parseError,
-              'Handshake value:',
-              handshake.handshake,
-            );
-            hasHandshake = {};
-          }
-
-          // Check if door already has acknowledgment - check if value exists and is 'ok'
-          if (hasHandshake && hasHandshake[doorId] === 'ok') {
-            console.log(
-              `Handshake already has door acknowledgment for ${doorId}, skipping update`,
-            );
-            return;
-          }
-
-          // Merge existing handshake data with new door acknowledgment
-          const updatedHandshake = {
-            [doorId]: 'ok',
-          };
-          let newHandshake = JSON.stringify(updatedHandshake);
-
-          console.log('Updating handshake:', {
-            doorId,
-            existing: hasHandshake,
-            updated: updatedHandshake,
-          });
-
-          // 8. Create new RECEIVE event (single object only)
-          const newEvent = JSON.stringify({
-            type: 'RECEIVE',
-            at: Date.now().toString(),
-            actor: `DOOR-${doorId}`,
-            status: 'SUCCESS',
-          });
-
-          // 10. Update document - send the updated events array (backend will merge)
-          await handshake.update({
-            $set: {
-              handshake: newHandshake,
-              events: newEvent,
-              client_updated_at: Date.now().toString(),
-            },
-          });
-
-          console.log(
-            '✅ Handshake updated successfully:',
-            received.transaction_id,
-          );
-        } catch (error) {
-          console.error('❌ Error updating handshake:', error);
-        }
-      });
+      this.replicationState.received$.subscribe((received) =>
+        this.handleReceivedReplication(received),
+      );
 
       this.replicationState.sent$.subscribe((sent) => {
         console.log('Handshake Replication sent:', sent);
@@ -372,5 +172,68 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
     }
 
     return this.replicationState;
+  }
+
+  // ---- Refactor helpers for received$ ----
+
+  private async handleReceivedReplication(received: any) {
+    // 1. transaction_id check
+    if (!received.transaction_id) return;
+
+    const txn = await this.findTransactionForReceived(received);
+    if (!txn) return;
+
+    const clientId = await this.clientIdentityService.getClientId();
+    if (!clientId) return;
+
+    if (!validateDoorPermission(txn, clientId, received)) return;
+
+    const handshake = await this.findHandshakeDoc(received);
+    if (!handshake) return;
+
+    const eventsArray = parseEventsArray(handshake);
+    if (hasReceiveEvent(eventsArray, clientId)) return;
+
+    const parsedHandshake = parseHandshakeField(handshake);
+    if (hasDoorAcknowledgment(parsedHandshake, clientId)) return;
+
+    await updateHandshake(handshake, parsedHandshake, clientId, received);
+  }
+
+  private async findTransactionForReceived(received: any) {
+    try {
+      const txn = await this.databaseService.db.txn
+        .findOne({ selector: { id: received.transaction_id } } as any)
+        .exec();
+      if (!txn) {
+        console.warn('Transaction not found:', received.transaction_id);
+        return null;
+      }
+      return txn;
+    } catch (e) {
+      console.error('Error finding transaction for received:', e);
+      return null;
+    }
+  }
+
+  private async findHandshakeDoc(received: any) {
+    try {
+      const handshake = await this.databaseService.db.handshake
+        .findOne({
+          selector: { transaction_id: received.transaction_id },
+        } as any)
+        .exec();
+      if (!handshake) {
+        console.warn(
+          'Handshake not found for transaction:',
+          received.transaction_id,
+        );
+        return null;
+      }
+      return handshake;
+    } catch (e) {
+      console.error('Error finding handshake doc:', e);
+      return null;
+    }
   }
 }

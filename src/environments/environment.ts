@@ -5,6 +5,7 @@ import { CapacitorSQLite, SQLiteConnection } from '@capacitor-community/sqlite';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { addRxPlugin } from 'rxdb/plugins/core';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
+import { RxDBCleanupPlugin } from 'rxdb/plugins/cleanup';
 
 const sqlite = new SQLiteConnection(CapacitorSQLite);
 
@@ -14,9 +15,11 @@ export const environment = {
   wsUrl: 'ws://localhost:3001/graphql',
   databaseName: 'kiosk_prod',
   multiInstance: false,
+  clientType: 'DOOR',
 
   addRxDBPlugins() {
     addRxPlugin(RxDBUpdatePlugin);
+    addRxPlugin(RxDBCleanupPlugin);
   },
   getRxStorage() {
     // Check if running on native platform

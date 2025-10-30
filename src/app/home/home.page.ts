@@ -16,9 +16,9 @@ import {
 } from '@ionic/angular';
 import { TransactionService } from '../core/Database/facade/transaction.service';
 import { DatabaseService } from '../core/Database/rxdb.service';
-import { DoorPreferenceService } from '../services/door-preference.service';
 import { DoorApiService } from '../core/Api/grapgql/door.service';
 import { DoorSelectionModalComponent } from '../components/door-selection-modal/door-selection-modal.component';
+import { ClientIdentityService } from '../core/identity/client-identity.service';
 
 interface AccessResult {
   hasAccess: boolean;
@@ -41,7 +41,7 @@ export class HomePage implements OnInit, OnDestroy {
   // Inject services
   private readonly transactionService = inject(TransactionService);
   private readonly databaseService = inject(DatabaseService);
-  private readonly doorPreferenceService = inject(DoorPreferenceService);
+  private readonly identityService = inject(ClientIdentityService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly doorApiService = inject(DoorApiService);
   private readonly modalController = inject(ModalController);
@@ -92,7 +92,7 @@ export class HomePage implements OnInit, OnDestroy {
    */
   private async loadDoorName() {
     try {
-      const doorName = await this.doorPreferenceService.getDoorName();
+      const doorName = await this.identityService.getDoorName();
       if (doorName) {
         this.currentDoorName.set(doorName);
       } else {
@@ -155,7 +155,7 @@ export class HomePage implements OnInit, OnDestroy {
       await this.databaseService.destroy();
 
       // Remove door preference
-      await this.doorPreferenceService.removeDoorId();
+      await this.identityService.removeClientId();
 
       // Dismiss loading
       if (loading) {
@@ -258,7 +258,7 @@ export class HomePage implements OnInit, OnDestroy {
       console.log('🔍 Checking access for student:', this.studentNumber);
 
       // Get current door ID
-      const currentDoorId = await this.doorPreferenceService.getDoorId();
+      const currentDoorId = await this.identityService.getClientId();
       if (!currentDoorId) {
         this.accessResult.set({
           hasAccess: false,

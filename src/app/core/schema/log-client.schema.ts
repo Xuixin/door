@@ -11,6 +11,7 @@ export interface LogClientDocument {
   server_created_at?: string | '';
   client_created_at: string; // Date.now().toString()
   diff_time_create?: number | '';
+  server_updated_at?: string | '';
 }
 
 export const LOG_CLIENT_SCHEMA_LITERAL: RxJsonSchema<LogClientDocument> = {
@@ -29,6 +30,7 @@ export const LOG_CLIENT_SCHEMA_LITERAL: RxJsonSchema<LogClientDocument> = {
     server_created_at: { type: 'string', maxLength: 30 },
     client_created_at: { type: 'string', maxLength: 30 },
     diff_time_create: { type: ['number', 'string'] },
+    server_updated_at: { type: 'string', maxLength: 30 },
   },
   required: [
     'id',

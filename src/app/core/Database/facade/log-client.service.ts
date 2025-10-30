@@ -3,10 +3,12 @@ import { DatabaseService } from '../rxdb.service';
 import { RxLogClientCollection } from '../RxDB.D';
 import { LogClientDocument } from '../../schema/log-client.schema';
 import { Observable, map } from 'rxjs';
+import { ClientIdentityService } from '../../identity/client-identity.service';
 
 @Injectable({ providedIn: 'root' })
 export class LogClientFacade {
   private readonly db = inject(DatabaseService);
+  private readonly identity = inject(ClientIdentityService);
 
   private get collection(): RxLogClientCollection {
     return this.db.db.log_client;
@@ -17,15 +19,17 @@ export class LogClientFacade {
   ): Promise<void> {
     const now = Date.now().toString();
     const id = entry.id || crypto.randomUUID();
+    const client_id = entry.client_id || (await this.identity.getClientId());
     const doc: LogClientDocument = {
       id,
-      client_id: entry.client_id || 'unknown',
-      type: (entry.type as any) || 'KIOSK',
+      client_id: client_id || '',
+      type: (entry.type as any) || (this.identity.getClientType() as any),
       status: entry.status,
       meta_data: entry.meta_data,
       client_created_at: entry.client_created_at || now,
       server_created_at: (entry.server_created_at as any) ?? '',
       diff_time_create: (entry.diff_time_create as any) ?? '',
+      server_updated_at: (entry.server_updated_at as any) ?? '',
     };
     await this.collection.insert(doc as any);
   }

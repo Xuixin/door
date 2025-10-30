@@ -12,7 +12,7 @@ import {
   PULL_TRANSACTION_QUERY,
   STREAM_TRANSACTION_SUBSCRIPTION,
 } from '../query-builder/txn-query-builder';
-import { DoorPreferenceService } from 'src/app/services/door-preference.service';
+import { ClientIdentityService } from '../../identity/client-identity.service';
 
 /**
  * Transaction-specific GraphQL replication service
@@ -27,7 +27,7 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
 
   constructor(
     networkStatus: NetworkStatusService,
-    private doorPreferenceService: DoorPreferenceService,
+    private identityService: ClientIdentityService,
   ) {
     super(networkStatus);
   }
@@ -64,7 +64,7 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
         batchSize: 5,
         queryBuilder: async (checkpoint, limit) => {
           console.log('🔵 Pull Query - checkpoint:', checkpoint);
-          const doorId = await this.doorPreferenceService.getDoorId();
+          const clientId = await this.identityService.getClientId();
 
           return {
             query: PULL_TRANSACTION_QUERY,
@@ -76,7 +76,7 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
                 },
                 limit: limit || 5,
                 where: {
-                  door_id: doorId || '',
+                  door_id: clientId || '',
                   status: 'IN,OUT',
                 },
               },
@@ -133,11 +133,11 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
         },
 
         wsOptions: {
-          connectionParams: () => {
+          connectionParams: async () => {
+            const clientId = await this.identityService.getClientId();
             return {
-              client_id: 'kiosk-1',
-              client_type: 'kiosk',
-              doorId: 'kiosk',
+              client_id: clientId,
+              client_type: this.identityService.getClientType(),
             };
           },
 

@@ -1,6 +1,6 @@
 import { Injector, Injectable, Signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { BehaviorSubject } from 'rxjs';
+import { async, BehaviorSubject, Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { TXN_SCHEMA, HANDSHAKE_SCHEMA } from '../schema';
@@ -14,7 +14,8 @@ import {
   HandshakeReplicationService,
 } from './replication';
 import { NetworkStatusService } from './network-status.service';
-import { DoorPreferenceService } from '../../services/door-preference.service';
+import { ClientIdentityService } from '../identity/client-identity.service';
+import { LogClientReplicationService } from './replication/log-client-replication.service';
 
 environment.addRxDBPlugins();
 
@@ -84,6 +85,7 @@ export class DatabaseService {
   private transactionReplicationService?: TransactionReplicationService;
   private handshakeReplicationService?: HandshakeReplicationService;
   private networkStatusService?: NetworkStatusService;
+  private logClientReplicationService?: LogClientReplicationService;
 
   // State management
   private _isReady = false;
@@ -93,8 +95,22 @@ export class DatabaseService {
     'idle' | 'initializing' | 'ready' | 'error'
   >('idle');
 
+  /**
+   * DatabaseService readiness signal. Emits true when DB is initialized and ready for operations.
+   */
+  private dbReadySubject = new BehaviorSubject<boolean>(false);
+  public dbReady$: Observable<boolean> = this.dbReadySubject.asObservable();
+
+  // Optionally, for promise-based consumers (if you want to support chaining):
+  private dbReadyPromise: Promise<void>;
+  private dbReadyPromiseResolve: (() => void) | null = null;
+
   constructor(private injector: Injector) {
     GLOBAL_DB_SERVICE = this;
+    // Create the ready promise
+    this.dbReadyPromise = new Promise<void>(resolve => {
+      this.dbReadyPromiseResolve = resolve;
+    });
   }
 
   setReplicationService(service: TransactionReplicationService) {
@@ -103,6 +119,10 @@ export class DatabaseService {
 
   setHandshakeReplicationService(service: HandshakeReplicationService) {
     this.handshakeReplicationService = service;
+  }
+
+  setLogClientReplicationService(service: LogClientReplicationService) {
+    this.logClientReplicationService = service;
   }
 
   get db(): RxTxnsDatabase {
@@ -154,18 +174,23 @@ export class DatabaseService {
 
       const transactionReplicationService = new TransactionReplicationService(
         this.networkStatusService,
-        this.injector.get(DoorPreferenceService),
+        this.injector.get(ClientIdentityService),
       );
       const handshakeReplicationService = new HandshakeReplicationService(
         this.networkStatusService,
-        this.injector.get(DoorPreferenceService),
+        this.injector.get(ClientIdentityService),
         this,
+      );
+
+      const logClientReplicationService = new LogClientReplicationService(
+        this.networkStatusService,
+        this.injector.get(ClientIdentityService),
       );
 
       // Set replication services
       this.setReplicationService(transactionReplicationService);
       this.setHandshakeReplicationService(handshakeReplicationService);
-
+      this.setLogClientReplicationService(logClientReplicationService);
       // Register replications
       const txnReplication =
         await transactionReplicationService.register_replication(
@@ -177,6 +202,12 @@ export class DatabaseService {
         await handshakeReplicationService.register_replication(
           db.handshake as any,
           'handshake-graphql-replication',
+        );
+
+      const logClientReplication =
+        await logClientReplicationService.register_replication(
+          db.log_client as any,
+          'log-client-graphql-replication',
         );
 
       if (txnReplication) {
@@ -199,6 +230,11 @@ export class DatabaseService {
       this._isReady = true;
       this._currentDoorId = doorId;
       this.initState$.next('ready');
+      this.dbReadySubject.next(true);
+      if (this.dbReadyPromiseResolve) {
+        this.dbReadyPromiseResolve();
+        this.dbReadyPromiseResolve = null;
+      }
 
       console.log(`✅ Database initialized successfully for door: ${doorId}`);
     } catch (error) {
@@ -247,6 +283,7 @@ export class DatabaseService {
       this._isReady = false;
       this._currentDoorId = undefined;
       this.initState$.next('idle');
+      this.dbReadySubject.next(false);
 
       console.log('✅ Database destroyed successfully');
     } catch (error) {
@@ -269,12 +306,21 @@ export class DatabaseService {
       console.log('Handshake replication stopped');
     }
 
+    if (this.logClientReplicationService) {
+      await this.logClientReplicationService.stopReplication();
+      console.log('Log client replication stopped');
+    }
+
     // Unsubscribe from network status
     if (this.transactionReplicationService) {
       (this.transactionReplicationService as any).ngOnDestroy?.();
     }
     if (this.handshakeReplicationService) {
       (this.handshakeReplicationService as any).ngOnDestroy?.();
+    }
+
+    if (this.logClientReplicationService) {
+      (this.logClientReplicationService as any).ngOnDestroy?.();
     }
 
     console.log('All GraphQL replications stopped');
@@ -290,4 +336,15 @@ export class DatabaseService {
       this.handshakeReplicationService?.getOnlineStatus() ?? false;
     return txnStatus || handshakeStatus;
   }
+
+  /**
+   * Expose a method to allow awaiting of DB readiness for promise-based code.
+   */
+  public async awaitDbReady(): Promise<void> {
+    if (this.dbReadySubject.getValue() === true) return;
+    return this.dbReadyPromise;
+  }
+
 }
+
+

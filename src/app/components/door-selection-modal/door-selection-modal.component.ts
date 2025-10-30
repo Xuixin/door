@@ -8,10 +8,10 @@ import {
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { RippleModule } from 'primeng/ripple';
-import { DoorPreferenceService } from '../../services/door-preference.service';
 import { DoorApiService } from 'src/app/core/Api/grapgql/door.service';
 import { DoorDocument } from 'src/app/core/Api/grapgql/door.service';
 import { DatabaseService } from 'src/app/core/Database/rxdb.service';
+import { ClientIdentityService } from 'src/app/core/identity/client-identity.service';
 
 export type Door = Omit<
   DoorDocument,
@@ -39,7 +39,7 @@ export class DoorSelectionModalComponent implements OnInit {
 
   constructor(
     private modalController: ModalController,
-    private doorPreferenceService: DoorPreferenceService,
+    private identityService: ClientIdentityService,
     private doorApiService: DoorApiService,
     private databaseService: DatabaseService,
     private loadingController: LoadingController,
@@ -135,7 +135,7 @@ export class DoorSelectionModalComponent implements OnInit {
    */
   selectDoor(doorId: string, doorName: string) {
     this.selectedDoorId.set(doorId);
-    this.doorPreferenceService.setDoorName(doorName);
+    this.identityService.setDoorName(doorName);
   }
 
   /**
@@ -179,8 +179,8 @@ export class DoorSelectionModalComponent implements OnInit {
       const doorName = selectedDoor?.name || `ประตู ${selectedId}`;
 
       // Save door ID and name
-      const success = await this.doorPreferenceService.setDoorId(selectedId);
-      await this.doorPreferenceService.setDoorName(doorName);
+      const success = await this.identityService.setClientId(selectedId);
+      await this.identityService.setDoorName(doorName);
 
       if (!success) {
         this.error.set('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
@@ -211,7 +211,7 @@ export class DoorSelectionModalComponent implements OnInit {
       }
 
       // Rollback preference on error
-      await this.doorPreferenceService.removeDoorId();
+      await this.identityService.removeClientId();
 
       this.error.set('เกิดข้อผิดพลาดในการเตรียมฐานข้อมูล กรุณาลองใหม่อีกครั้ง');
     } finally {

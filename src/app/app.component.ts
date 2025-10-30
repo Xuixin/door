@@ -1,14 +1,14 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { DatabaseService } from './core/Database/rxdb.service';
-import { DoorPreferenceService } from './services/door-preference.service';
-import { ClientEventLoggingService } from './core/monitoring/client-event-logging.service';
+import { ClientIdentityService } from './core/identity/client-identity.service';
+import { DoorSelectionModalComponent } from './components/door-selection-modal/door-selection-modal.component';
 import {
   ModalController,
   LoadingController,
   AlertController,
 } from '@ionic/angular';
-import { DoorSelectionModalComponent } from './components/door-selection-modal/door-selection-modal.component';
+import { ClientEventLoggingService } from './core/monitoring/client-event-logging.service';
 
 import 'zone.js/plugins/zone-patch-rxjs';
 @Component({
@@ -20,7 +20,7 @@ import 'zone.js/plugins/zone-patch-rxjs';
 export class AppComponent implements OnInit, OnDestroy {
   constructor(
     private databaseService: DatabaseService,
-    private doorPreferenceService: DoorPreferenceService,
+    private clientIdentityService: ClientIdentityService,
     private modalController: ModalController,
     private loadingController: LoadingController,
     private alertController: AlertController,
@@ -31,19 +31,18 @@ export class AppComponent implements OnInit, OnDestroy {
     console.log('🚀 App component initialized');
 
     try {
-      // Check if door is already selected
-      const doorId = await this.doorPreferenceService.getDoorId();
-
-      if (!doorId) {
-        // No door selected - show modal
-        console.log('🚪 No door selected, opening door selection modal');
-        await this.openDoorSelectionModal();
+      // Use ClientIdentityService instead of DoorPreferenceService for ID
+      const clientId = await this.clientIdentityService.getClientId();
+      if (!clientId) {
+        // No clientId selected - show modal
+        console.log('🚪 No client_id, opening selection modal');
+        await this.openClientSelectionModal(); // rename method for clarity
       } else {
-        // Door already selected - initialize database
+        // clientId already selected - initialize database
         console.log(
-          `🚪 Door already selected: ${doorId}, initializing database`,
+          `🚪 client_id already selected: ${clientId}, initializing database`,
         );
-        await this.initializeWithDoorId(doorId);
+        await this.initializeWithClientId(clientId);
       }
     } catch (error) {
       console.error('❌ Error during app initialization:', error);
@@ -58,7 +57,7 @@ export class AppComponent implements OnInit, OnDestroy {
   /**
    * Open door selection modal
    */
-  private async openDoorSelectionModal() {
+  private async openClientSelectionModal() {
     const modal = await this.modalController.create({
       component: DoorSelectionModalComponent,
       backdropDismiss: false, // Force selection
@@ -75,14 +74,14 @@ export class AppComponent implements OnInit, OnDestroy {
     } else {
       console.warn('⚠️ Door selection was cancelled');
       // Retry opening modal
-      setTimeout(() => this.openDoorSelectionModal(), 1000);
+      setTimeout(() => this.openClientSelectionModal(), 1000);
     }
   }
 
   /**
    * Initialize database with existing door ID
    */
-  private async initializeWithDoorId(doorId: string) {
+  private async initializeWithClientId(clientId: string) {
     const loading = await this.loadingController.create({
       message: 'กำลังเตรียมระบบ...',
       spinner: 'crescent',
@@ -96,7 +95,7 @@ export class AppComponent implements OnInit, OnDestroy {
       // Check if already initialized with same door
       if (
         this.databaseService.isInitialized &&
-        this.databaseService.currentDoorId === doorId
+        this.databaseService.currentDoorId === clientId
       ) {
         console.log('Database already initialized with same door');
         await this.clientEventLoggingService.init();
@@ -105,8 +104,8 @@ export class AppComponent implements OnInit, OnDestroy {
       }
 
       // Initialize database
-      await this.databaseService.initialize(doorId);
-      console.log(`✅ Database initialized successfully for door: ${doorId}`);
+      await this.databaseService.initialize(clientId);
+      console.log(`✅ Database initialized successfully for door: ${clientId}`);
 
       // Start client event logging after DB is ready
       await this.clientEventLoggingService.init();
@@ -153,9 +152,9 @@ export class AppComponent implements OnInit, OnDestroy {
           text: 'เลือกประตูใหม่',
           handler: async () => {
             // Remove door preference
-            await this.doorPreferenceService.removeDoorId();
+            // await this.doorPreferenceService.removeDoorId(); // This line is removed
             // Open door selection modal
-            await this.openDoorSelectionModal();
+            await this.openClientSelectionModal();
           },
         },
       ],
