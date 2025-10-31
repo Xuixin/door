@@ -8,7 +8,10 @@ import { BaseReplicationService } from './base-replication.service';
 import { HandshakeDocument } from '../../schema';
 import { handshakeQueryBuilder } from '../query-builder/handshake-query-builder';
 import { DatabaseService } from '../rxdb.service';
-import { parseEventsArray, parseHandshakeField } from '../utils/received-parse-utils';
+import {
+  parseEventsArray,
+  parseHandshakeField,
+} from '../utils/received-parse-utils';
 import {
   validateDoorPermission,
   hasReceiveEvent,
@@ -35,7 +38,6 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
   ) {
     super(networkStatus);
   }
-
 
   /**
    * Setup handshake-specific GraphQL replication
@@ -202,6 +204,7 @@ export class HandshakeReplicationService extends BaseReplicationService<Handshak
 
   private async findTransactionForReceived(received: any) {
     try {
+      await this.databaseService.awaitDbReady();
       const txn = await this.databaseService.db.txn
         .findOne({ selector: { id: received.transaction_id } } as any)
         .exec();

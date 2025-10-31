@@ -134,10 +134,11 @@ export class TransactionReplicationService extends BaseReplicationService<RxTxnD
 
         wsOptions: {
           connectionParams: async () => {
-            const clientId = await this.identityService.getClientId();
+            const client_id = await this.identityService.getClientId();
             return {
-              client_id: clientId,
+              client_id,
               client_type: this.identityService.getClientType(),
+              door_id: client_id,
             };
           },
 

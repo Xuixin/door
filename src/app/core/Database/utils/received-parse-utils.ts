@@ -17,67 +17,19 @@ export function parseEventsArray(handshake: any): any[] {
 }
 
 export function parseHandshakeField(handshake: any): Record<string, any> {
-  let hasHandshake: any = {};
   const handshakeValue = handshake.handshake || '{}';
   try {
-    try {
-      hasHandshake = JSON.parse(handshakeValue);
-      if (
-        !hasHandshake ||
-        typeof hasHandshake !== 'object' ||
-        Array.isArray(hasHandshake)
-      ) {
-        throw new Error('Parsed value is not an object');
-      }
-    } catch (firstParseError) {
-      // Extract valid JSON objects from malformed string
-      console.warn(
-        'Initial parse failed, will try extracting valid objects. Error:',
-        firstParseError,
-      );
-      const jsonObjects: any[] = [];
-      let start = -1;
-      let depth = 0;
-      for (let i = 0; i < handshakeValue.length; i++) {
-        if (handshakeValue[i] === '{') {
-          if (start === -1) start = i;
-          depth++;
-        } else if (handshakeValue[i] === '}') {
-          depth--;
-          if (depth === 0 && start !== -1) {
-            const jsonStr = handshakeValue.substring(start, i + 1);
-            try {
-              const parsed = JSON.parse(jsonStr);
-              if (
-                parsed &&
-                typeof parsed === 'object' &&
-                !Array.isArray(parsed)
-              ) {
-                jsonObjects.push(parsed);
-              }
-            } catch (_) {}
-            start = -1;
-          }
-        }
-      }
-      if (jsonObjects.length > 0) {
-        hasHandshake = Object.assign({}, ...jsonObjects);
-        console.log(
-          'Extracted and merged',
-          jsonObjects.length,
-          'objects from malformed handshake data',
-        );
-      } else {
-        hasHandshake = {};
-      }
-    }
-  } catch (parseError) {
-    console.error(
-      'Failed to parse handshake, init new object:',
-      parseError,
-      handshake.handshake,
-    );
-    hasHandshake = {};
+    // ถ้าไม่ได้ขึ้นต้นด้วย '[' แสดงว่าน่าจะเป็น object หลายตัวติดกัน
+    const normalized = handshakeValue.trim().startsWith('[')
+      ? handshakeValue
+      : `[${handshakeValue}]`;
+
+    const arr = JSON.parse(normalized); // ตอนนี้เป็น array แล้ว
+    const merged = Object.assign({}, ...arr); // รวม object ทั้งหมดเข้าด้วยกัน
+
+    return merged;
+  } catch (err) {
+    console.warn('Failed to parse handshake:', err, handshakeValue);
+    return {};
   }
-  return hasHandshake;
 }

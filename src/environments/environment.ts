@@ -11,8 +11,8 @@ const sqlite = new SQLiteConnection(CapacitorSQLite);
 
 export const environment = {
   production: false,
-  apiUrl: 'http://localhost:3001/graphql',
-  wsUrl: 'ws://localhost:3001/graphql',
+  apiUrl: 'http://localhost:10102/graphql',
+  wsUrl: 'ws://localhost:10102/graphql',
   databaseName: 'kiosk_prod',
   multiInstance: false,
   clientType: 'DOOR',
