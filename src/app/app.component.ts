@@ -1,16 +1,14 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { DatabaseService } from './core/Database/rxdb.service';
-import { ClientIdentityService } from './core/identity/client-identity.service';
-import { DoorSelectionModalComponent } from './components/door-selection-modal/door-selection-modal.component';
-import {
-  ModalController,
-  LoadingController,
-  AlertController,
-} from '@ionic/angular';
-import { ClientEventLoggingService } from './core/monitoring/client-event-logging.service';
+import { DatabaseService } from './core/Database/core/services/database.service';
+import { AdapterProviderService } from './core/Database/core/factory';
+import { Subscription } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
+import { environment } from 'src/environments/environment';
 
 import 'zone.js/plugins/zone-patch-rxjs';
+import { ReplicationFailoverService } from './core/Database/core/services/replication-failover.service';
+import { DeviceMonitoringFacade } from './core/Database/collections/device-monitoring';
 @Component({
   selector: 'app-root',
   standalone: false,
@@ -18,148 +16,65 @@ import 'zone.js/plugins/zone-patch-rxjs';
   styleUrls: ['app.component.scss'],
 })
 export class AppComponent implements OnInit, OnDestroy {
+  private deviceWatcherSubscription?: Subscription;
+
   constructor(
     private databaseService: DatabaseService,
-    private clientIdentityService: ClientIdentityService,
-    private modalController: ModalController,
-    private loadingController: LoadingController,
-    private alertController: AlertController,
-    private clientEventLoggingService: ClientEventLoggingService,
+    private failoverService: ReplicationFailoverService,
+    private deviceMonitoringFacade: DeviceMonitoringFacade,
   ) {}
 
   async ngOnInit() {
     console.log('🚀 App component initialized');
 
-    try {
-      // Use ClientIdentityService instead of DoorPreferenceService for ID
-      const clientId = await this.clientIdentityService.getClientId();
-      if (!clientId) {
-        // No clientId selected - show modal
-        console.log('🚪 No client_id, opening selection modal');
-        await this.openClientSelectionModal(); // rename method for clarity
-      } else {
-        // clientId already selected - initialize database
-        console.log(
-          `🚪 client_id already selected: ${clientId}, initializing database`,
-        );
-        await this.initializeWithClientId(clientId);
-      }
-    } catch (error) {
-      console.error('❌ Error during app initialization:', error);
-      await this.handleInitializationError(error);
-    }
+    // Setup primary server recovery watcher
+    this.setupPrimaryServerWatcher();
   }
 
   ngOnDestroy() {
     this.databaseService.stopReplication();
+    this.deviceWatcherSubscription?.unsubscribe();
   }
 
   /**
-   * Open door selection modal
+   * Setup global watcher for primary server recovery
+   * Monitors device status changes in local database
    */
-  private async openClientSelectionModal() {
-    const modal = await this.modalController.create({
-      component: DoorSelectionModalComponent,
-      backdropDismiss: false, // Force selection
-      cssClass: 'door-selection-modal',
-    });
+  private setupPrimaryServerWatcher(): void {
+    console.log(
+      '🔍 [AppComponent] Setting up global primary server watcher...',
+    );
 
-    await modal.present();
+    // Watch for changes to the primary server device (environment.serverId)
+    this.deviceWatcherSubscription = this.deviceMonitoringFacade
+      .getDeviceMonitoring$()
+      .pipe(
+        map((devices) => devices.find((d) => d.id === environment.serverId)),
+        filter((device) => !!device && device.status === 'ONLINE'),
+      )
+      .subscribe(async (device: any) => {
+        if (device) {
+          console.log('🎯 [AppComponent] Primary server detected as ONLINE!', {
+            id: device.id,
+            name: device.name,
+            status: device.status,
+            meta_data: device.meta_data,
+            created_by: device.created_by,
+          });
 
-    const { data } = await modal.onDidDismiss();
-
-    if (data) {
-      console.log(`✅ Door selected: ${data}`);
-      // Database is already initialized by the modal
-    } else {
-      console.warn('⚠️ Door selection was cancelled');
-      // Retry opening modal
-      setTimeout(() => this.openClientSelectionModal(), 1000);
-    }
-  }
-
-  /**
-   * Initialize database with existing door ID
-   */
-  private async initializeWithClientId(clientId: string) {
-    const loading = await this.loadingController.create({
-      message: 'กำลังเตรียมระบบ...',
-      spinner: 'crescent',
-      translucent: true,
-      backdropDismiss: false,
-    });
-
-    await loading.present();
-
-    try {
-      // Check if already initialized with same door
-      if (
-        this.databaseService.isInitialized &&
-        this.databaseService.currentDoorId === clientId
-      ) {
-        console.log('Database already initialized with same door');
-        await this.clientEventLoggingService.init();
-        await loading.dismiss();
-        return;
-      }
-
-      // Initialize database
-      await this.databaseService.initialize(clientId);
-      console.log(`✅ Database initialized successfully for door: ${clientId}`);
-
-      // Start client event logging after DB is ready
-      await this.clientEventLoggingService.init();
-
-      await loading.dismiss();
-    } catch (error) {
-      console.error('❌ Database initialization failed:', error);
-      await loading.dismiss();
-
-      // Show error and retry with door selection
-      await this.showErrorAndRetry(error);
-    }
-  }
-
-  /**
-   * Handle initialization errors
-   */
-  private async handleInitializationError(error: any) {
-    const alert = await this.alertController.create({
-      header: 'เกิดข้อผิดพลาด',
-      message: 'ไม่สามารถเริ่มต้นระบบได้ กรุณาลองใหม่อีกครั้ง',
-      buttons: [
-        {
-          text: 'ลองใหม่',
-          handler: () => {
-            window.location.reload();
-          },
-        },
-      ],
-    });
-
-    await alert.present();
-  }
-
-  /**
-   * Show error and retry with door selection
-   */
-  private async showErrorAndRetry(error: any) {
-    const alert = await this.alertController.create({
-      header: 'เกิดข้อผิดพลาด',
-      message: 'ไม่สามารถเปิดฐานข้อมูลได้ กรุณาเลือกประตูใหม่',
-      buttons: [
-        {
-          text: 'เลือกประตูใหม่',
-          handler: async () => {
-            // Remove door preference
-            // await this.doorPreferenceService.removeDoorId(); // This line is removed
-            // Open door selection modal
-            await this.openClientSelectionModal();
-          },
-        },
-      ],
-    });
-
-    await alert.present();
+          // Check if we're currently on secondary server
+          const currentUrls = this.failoverService.getCurrentUrls();
+          if (currentUrls?.http?.includes(':3001')) {
+            console.log(
+              '✅ [AppComponent] Currently on secondary, switching to primary...',
+            );
+            await this.failoverService.switchToPrimary();
+          } else {
+            console.log(
+              'ℹ️ [AppComponent] Already on primary server, no action needed',
+            );
+          }
+        }
+      });
   }
 }

@@ -3,98 +3,86 @@ import { environment } from 'src/environments/environment';
 import { Preferences } from '@capacitor/preferences';
 
 const CLIENT_ID_KEY = 'client_id';
-const DOOR_NAME_KEY = 'door_name';
+const CLIENT_NAME_KEY = 'client_name';
+const CLIENT_TYPE_KEY = 'client_type';
 
 @Injectable({ providedIn: 'root' })
 export class ClientIdentityService {
   private cachedId?: string;
+  private cachedName?: string;
+  private cachedType?: string;
 
   getClientType(): string {
-    return (environment as any).clientType || 'DOOR';
+    return (environment as any).clientType || 'KIOSK';
   }
 
+  /**
+   * Get client ID from Preferences
+   * Returns null if not set (does not auto-generate UUID)
+   */
   async getClientId(): Promise<string | null> {
-    if (this.cachedId) return this.cachedId;
+    if (this.cachedId !== undefined) return this.cachedId || null;
+
     const { value } = await Preferences.get({ key: CLIENT_ID_KEY });
     this.cachedId = value || undefined;
-    return value;
+    return this.cachedId || null;
   }
 
-  // ---- ClientId methods ----
-
-  async getClientIdRaw(): Promise<string | null> {
-    try {
-      const result = await Preferences.get({ key: CLIENT_ID_KEY });
-      return result.value;
-    } catch (error) {
-      console.error('Error getting client ID from preferences:', error);
-      return null;
-    }
+  /**
+   * Set client ID and save to Preferences
+   */
+  async setClientId(id: string): Promise<void> {
+    await Preferences.set({ key: CLIENT_ID_KEY, value: id });
+    this.cachedId = id;
   }
 
-  async setClientId(clientId: string): Promise<boolean> {
-    try {
-      await Preferences.set({ key: CLIENT_ID_KEY, value: clientId });
-      console.log('Client ID saved to preferences:', clientId);
-      return true;
-    } catch (error) {
-      console.error('Error saving client ID to preferences:', error);
-      return false;
-    }
+  /**
+   * Remove client ID from Preferences
+   */
+  async removeClientId(): Promise<void> {
+    await Preferences.remove({ key: CLIENT_ID_KEY });
+    this.cachedId = undefined;
   }
 
-  async hasClientId(): Promise<boolean> {
-    try {
-      const clientId = await this.getClientIdRaw();
-      return clientId !== null && clientId !== '';
-    } catch (error) {
-      console.error('Error checking client ID existence:', error);
-      return false;
-    }
+  /**
+   * Get client name from Preferences
+   */
+  async getClientName(): Promise<string | null> {
+    if (this.cachedName !== undefined) return this.cachedName || null;
+
+    const { value } = await Preferences.get({ key: CLIENT_NAME_KEY });
+    this.cachedName = value || undefined;
+    return this.cachedName || null;
   }
 
-  async removeClientId(): Promise<boolean> {
-    try {
-      await Preferences.remove({ key: CLIENT_ID_KEY });
-      console.log('Client ID removed from preferences');
-      return true;
-    } catch (error) {
-      console.error('Error removing client ID from preferences:', error);
-      return false;
-    }
+  /**
+   * Set client name and save to Preferences
+   */
+  async setClientName(name: string): Promise<void> {
+    await Preferences.set({ key: CLIENT_NAME_KEY, value: name });
+    this.cachedName = name;
   }
 
-  // ---- DoorName methods ----
+  /**
+   * Get client type from Preferences (or from environment as fallback)
+   */
+  async getClientTypeStored(): Promise<string> {
+    if (this.cachedType) return this.cachedType;
 
-  async getDoorName(): Promise<string | null> {
-    try {
-      const result = await Preferences.get({ key: DOOR_NAME_KEY });
-      return result.value;
-    } catch (error) {
-      console.error('Error getting door name from preferences:', error);
-      return null;
+    const { value } = await Preferences.get({ key: CLIENT_TYPE_KEY });
+    if (value) {
+      this.cachedType = value;
+      return value;
     }
+    // Fallback to environment
+    return this.getClientType();
   }
 
-  async setDoorName(doorName: string): Promise<boolean> {
-    try {
-      await Preferences.set({ key: DOOR_NAME_KEY, value: doorName });
-      console.log('Door name saved to preferences:', doorName);
-      return true;
-    } catch (error) {
-      console.error('Error saving door name to preferences:', error);
-      return false;
-    }
-  }
-
-  async removeDoorName(): Promise<boolean> {
-    try {
-      await Preferences.remove({ key: DOOR_NAME_KEY });
-      console.log('Door name removed from preferences');
-      return true;
-    } catch (error) {
-      console.error('Error removing door name from preferences:', error);
-      return false;
-    }
+  /**
+   * Set client type and save to Preferences
+   */
+  async setClientType(type: string): Promise<void> {
+    await Preferences.set({ key: CLIENT_TYPE_KEY, value: type });
+    this.cachedType = type;
   }
 }

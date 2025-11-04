@@ -14,10 +14,9 @@ import {
   LoadingController,
   AlertController,
 } from '@ionic/angular';
-import { TransactionService } from '../core/Database/facade/transaction.service';
-import { DatabaseService } from '../core/Database/rxdb.service';
-import { DoorApiService } from '../core/Api/grapgql/door.service';
-import { DoorSelectionModalComponent } from '../components/door-selection-modal/door-selection-modal.component';
+import { TransactionService } from '../core/Database/collections/txn';
+import { DatabaseService } from '../core/Database/core/services/database.service';
+import { DeviceSelectionModalComponent } from '../components/device-selection-modal/device-selection-modal.component';
 import { ClientIdentityService } from '../core/identity/client-identity.service';
 
 interface AccessResult {
@@ -43,7 +42,6 @@ export class HomePage implements OnInit, OnDestroy {
   private readonly databaseService = inject(DatabaseService);
   private readonly identityService = inject(ClientIdentityService);
   private readonly cdr = inject(ChangeDetectorRef);
-  private readonly doorApiService = inject(DoorApiService);
   private readonly modalController = inject(ModalController);
   private readonly loadingController = inject(LoadingController);
   private readonly alertController = inject(AlertController);
@@ -78,13 +76,6 @@ export class HomePage implements OnInit, OnDestroy {
   async ngOnInit() {
     // Load door name from preferences
     await this.loadDoorName();
-
-    // Wait for database to be ready
-    this.databaseService.initState$.subscribe((state) => {
-      if (state === 'ready') {
-        // Database is ready
-      }
-    });
   }
 
   /**
@@ -92,7 +83,7 @@ export class HomePage implements OnInit, OnDestroy {
    */
   private async loadDoorName() {
     try {
-      const doorName = await this.identityService.getDoorName();
+      const doorName = await this.identityService.getClientName();
       if (doorName) {
         this.currentDoorName.set(doorName);
       } else {
@@ -145,14 +136,8 @@ export class HomePage implements OnInit, OnDestroy {
       });
       await loading.present();
 
-      // Check if database is initializing
-      if (this.databaseService.isInitializing) {
-        throw new Error('Database is currently initializing. Please wait.');
-      }
-
-      // Destroy old database
-      console.log('🗑️ Destroying old database...');
-      await this.databaseService.destroy();
+      // Stop replication before changing door
+      await this.databaseService.stopReplication();
 
       // Remove door preference
       await this.identityService.removeClientId();
@@ -165,7 +150,7 @@ export class HomePage implements OnInit, OnDestroy {
 
       // Open door selection modal
       const modal = await this.modalController.create({
-        component: DoorSelectionModalComponent,
+        component: DeviceSelectionModalComponent,
         backdropDismiss: false,
         cssClass: 'door-selection-modal',
       });
@@ -279,8 +264,8 @@ export class HomePage implements OnInit, OnDestroy {
       }
 
       // Query local database for student
-      const studentDoc = await this.databaseService.db.txn
-        .findOne({
+      const studentDoc = await this.databaseService
+        .db!.txn.findOne({
           selector: { student_number: this.studentNumber.trim() } as any,
         })
         .exec();

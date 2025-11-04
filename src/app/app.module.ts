@@ -3,10 +3,11 @@ import {
   NgModule,
   APP_INITIALIZER,
   CUSTOM_ELEMENTS_SCHEMA,
+  ErrorHandler,
 } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { RouteReuseStrategy } from '@angular/router';
-import { HttpClientModule } from '@angular/common/http';
+import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 
 import { IonicModule } from '@ionic/angular';
 import {
@@ -21,9 +22,18 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { MessageService } from 'primeng/api';
 import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import { DatabaseService } from './core/Database/rxdb.service';
+import {
+  initDatabase,
+  DatabaseService,
+} from './core/Database/core/services/database.service';
+import { AdapterProviderService } from './core/Database/core/factory';
 import { WorkflowPreloadService } from './flow-services/workflow-preload.service';
 import Aura from '@primeng/themes/aura';
+import { CommonModule } from '@angular/common';
+import { ClientEventLoggingService } from './core/monitoring/client-event-logging.service';
+import { GlobalErrorHandlerService } from './core/error-handling/error-handler.service';
+import { OfflineHttpInterceptor } from './core/interceptors/offline-http.interceptor';
+import { OfflineBannerComponent } from './components/offline-banner/offline-banner.component';
 
 @NgModule({
   declarations: [AppComponent],
@@ -32,6 +42,7 @@ import Aura from '@primeng/themes/aura';
     IonicModule.forRoot(),
     AppRoutingModule,
     HttpClientModule,
+    OfflineBannerComponent,
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   providers: [
@@ -40,7 +51,29 @@ import Aura from '@primeng/themes/aura';
       useClass: IonicRouteStrategy,
     },
     provideIonicAngular(),
-    // * database - now initialized on-demand after door selection
+    // * database adapter system
+    // AdapterProviderService is providedIn: 'root', but listed here for clarity
+    AdapterProviderService,
+    // Initialize database using adapter pattern
+    // This initializes the database adapter (currently RxDB) with all schemas
+    {
+      provide: APP_INITIALIZER,
+      useFactory: (injector: Injector) => () => initDatabase(injector),
+      multi: true,
+      deps: [Injector],
+    },
+    // * client event logging (ensure DB initialized first)
+    {
+      provide: APP_INITIALIZER,
+      useFactory: (injector: Injector, svc: ClientEventLoggingService) => () =>
+        (async () => {
+          // Wait for DB init (idempotent if already initialized)
+          await initDatabase(injector);
+          await svc.init();
+        })(),
+      multi: true,
+      deps: [Injector, ClientEventLoggingService],
+    },
     // * workflow preload
     {
       provide: APP_INITIALIZER,
@@ -51,9 +84,19 @@ import Aura from '@primeng/themes/aura';
       multi: true,
       deps: [WorkflowPreloadService],
     },
-
     DatabaseService,
     WorkflowPreloadService,
+    // * global error handler
+    {
+      provide: ErrorHandler,
+      useClass: GlobalErrorHandlerService,
+    },
+    // * HTTP interceptors
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: OfflineHttpInterceptor,
+      multi: true,
+    },
     // * animations
     provideAnimationsAsync(),
     MessageService,
