@@ -14,10 +14,10 @@ import {
   LoadingController,
   AlertController,
 } from '@ionic/angular';
-import { TransactionService } from '../core/Database/collections/txn';
-import { DatabaseService } from '../core/Database/core/services/database.service';
+import { TransactionService } from './../core/Database/collection/txn';
+import { DatabaseService } from '../core/Database/services/database.service';
 import { DeviceSelectionModalComponent } from '../components/device-selection-modal/device-selection-modal.component';
-import { ClientIdentityService } from '../core/identity/client-identity.service';
+import { ClientIdentityService } from '../services/client-identity.service';
 
 interface AccessResult {
   hasAccess: boolean;
@@ -254,7 +254,7 @@ export class HomePage implements OnInit, OnDestroy {
       }
 
       // Check if database is ready
-      if (!this.databaseService.isInitialized) {
+      if (!this.databaseService.isInitialized()) {
         this.accessResult.set({
           hasAccess: false,
           message: 'ระบบฐานข้อมูลยังไม่พร้อม กรุณารอสักครู่',
@@ -263,12 +263,10 @@ export class HomePage implements OnInit, OnDestroy {
         return;
       }
 
-      // Query local database for student
-      const studentDoc = await this.databaseService
-        .db!.txn.findOne({
-          selector: { student_number: this.studentNumber.trim() } as any,
-        })
-        .exec();
+      // Query local database for student using TransactionService
+      const studentDoc = await this.transactionService.findByStudentNumber(
+        this.studentNumber.trim(),
+      );
 
       console.log('Student document:', studentDoc);
 
@@ -282,7 +280,8 @@ export class HomePage implements OnInit, OnDestroy {
       }
 
       // Check if student has access to current door
-      const student = studentDoc as any;
+      // studentDoc is already a plain object from RxDB
+      const student = studentDoc;
       const doorPermissions = Array.isArray(student.door_permission)
         ? student.door_permission
         : student.door_permission.split(',').map((s: string) => s.trim());

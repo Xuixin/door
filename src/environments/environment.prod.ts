@@ -15,12 +15,12 @@ export const environment = {
   wsUrl: 'ws://localhost:10102/graphql',
   apiSecondaryUrl: 'http://localhost:3001/graphql',
   wsSecondaryUrl: 'ws://localhost:3001/graphql',
-  databaseName: 'door_prod',
+  databaseName: 'kiosk_prod',
   multiInstance: false,
-  clientType: 'door',
+  clientType: 'DOOR',
   adapterType: 'rxdb' as const, // Database adapter type: 'rxdb' | 'pouchdb' | 'watermelon' | 'server'
+  serverName: 'Mini server',
   serverId: 'server-111',
-  serverName: 'server-mock',
   addRxDBPlugins() {
     addRxPlugin(RxDBCleanupPlugin);
     addRxPlugin(RxDBQueryBuilderPlugin);

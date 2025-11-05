@@ -8,7 +8,7 @@ import {
 import { Injectable, inject } from '@angular/core';
 import { Observable, throwError, timer } from 'rxjs';
 import { retryWhen, mergeMap, finalize } from 'rxjs/operators';
-import { NetworkStatusService } from '../Database/core/services/network-status.service';
+import { NetworkStatusService } from '../Database/services/network-status.service';
 
 /**
  * Maximum number of retry attempts

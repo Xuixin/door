@@ -12,7 +12,7 @@ import {
   DeviceApiService,
   DeviceMonitoringDocument,
 } from 'src/app/core/api/graphql/device-api.service';
-import { ClientIdentityService } from 'src/app/core/identity/client-identity.service';
+import { ClientIdentityService } from 'src/app/services/client-identity.service';
 import { environment } from 'src/environments/environment';
 
 export type Device = Pick<

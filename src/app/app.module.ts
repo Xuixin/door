@@ -5,6 +5,7 @@ import {
   CUSTOM_ELEMENTS_SCHEMA,
   ErrorHandler,
 } from '@angular/core';
+import { ModalController } from '@ionic/angular';
 import { BrowserModule } from '@angular/platform-browser';
 import { RouteReuseStrategy } from '@angular/router';
 import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
@@ -22,18 +23,36 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { MessageService } from 'primeng/api';
 import { ConfirmationService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import {
-  initDatabase,
-  DatabaseService,
-} from './core/Database/core/services/database.service';
-import { AdapterProviderService } from './core/Database/core/factory';
+import { DatabaseService } from './core/Database/services/database.service';
 import { WorkflowPreloadService } from './flow-services/workflow-preload.service';
+import { ClientIdentityService } from './services/client-identity.service';
 import Aura from '@primeng/themes/aura';
-import { CommonModule } from '@angular/common';
-import { ClientEventLoggingService } from './core/monitoring/client-event-logging.service';
-import { GlobalErrorHandlerService } from './core/error-handling/error-handler.service';
+import { ClientEventLoggingService } from './helper/client-event-logging.service';
 import { OfflineHttpInterceptor } from './core/interceptors/offline-http.interceptor';
 import { OfflineBannerComponent } from './components/offline-banner/offline-banner.component';
+import { StatusComponent } from './components/status/status.component';
+// Ionic Icons
+import { addIcons } from 'ionicons';
+import {
+  saveOutline,
+  warning,
+  wifiOutline,
+  documentTextOutline,
+  archiveOutline,
+  cloudOfflineOutline,
+  settingsOutline,
+} from 'ionicons/icons';
+
+// Register Ionic Icons
+addIcons({
+  'save-outline': saveOutline,
+  warning: warning,
+  'wifi-outline': wifiOutline,
+  'document-text-outline': documentTextOutline,
+  'archive-outline': archiveOutline,
+  'cloud-offline-outline': cloudOfflineOutline,
+  'settings-outline': settingsOutline,
+});
 
 @NgModule({
   declarations: [AppComponent],
@@ -43,6 +62,7 @@ import { OfflineBannerComponent } from './components/offline-banner/offline-bann
     AppRoutingModule,
     HttpClientModule,
     OfflineBannerComponent,
+    StatusComponent,
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   providers: [
@@ -51,28 +71,92 @@ import { OfflineBannerComponent } from './components/offline-banner/offline-bann
       useClass: IonicRouteStrategy,
     },
     provideIonicAngular(),
-    // * database adapter system
-    // AdapterProviderService is providedIn: 'root', but listed here for clarity
-    AdapterProviderService,
-    // Initialize database using adapter pattern
-    // This initializes the database adapter (currently RxDB) with all schemas
+    // * database initialization
+    // Initialize database service (RxDB with all collections and replications)
+    // If no clientId, will show device-selection-modal to user
     {
       provide: APP_INITIALIZER,
-      useFactory: (injector: Injector) => () => initDatabase(injector),
+      useFactory: (injector: Injector) => async () => {
+        console.log('🚀 [AppModule] Starting database initialization...');
+
+        try {
+          const identityService = injector.get(ClientIdentityService);
+          const dbService = injector.get(DatabaseService);
+
+          // Check if client ID exists, if not show device selection modal
+          let clientId = await identityService.getClientId();
+
+          if (!clientId) {
+            // No client ID - need to select device
+            console.log(
+              '📱 [AppModule] No client ID found, showing device selection modal...',
+            );
+
+            // Get ModalController from injector
+            const modalController = injector.get(ModalController);
+
+            // Show device selection modal
+            const { DeviceSelectionModalComponent } = await import(
+              './components/device-selection-modal/device-selection-modal.component'
+            );
+
+            const modal = await modalController.create({
+              component: DeviceSelectionModalComponent,
+              backdropDismiss: false,
+              cssClass: 'device-selection-modal',
+            });
+
+            await modal.present();
+            const result = await modal.onDidDismiss();
+
+            if (!result.data || !result.data.id) {
+              throw new Error(
+                'Device selection was cancelled. Internet connection is required to select a device.',
+              );
+            }
+
+            const selectedDevice = result.data;
+            console.log('✅ [AppModule] Device selected:', selectedDevice);
+
+            // Device should already be saved by the modal component
+            // Verify it was saved
+            clientId = await identityService.getClientId();
+            if (!clientId) {
+              throw new Error('Failed to save device information');
+            }
+          }
+
+          // Now initialize database with clientId
+          console.log(
+            '🚀 [AppModule] Initializing database with clientId...',
+            clientId,
+          );
+          await dbService.initializeDatabase();
+          console.log('✅ [AppModule] Database initialized successfully');
+        } catch (error: any) {
+          console.error(
+            '❌ [AppModule] Fatal error during database initialization:',
+            error,
+          );
+          // Throw error - device selection and database initialization are required
+          throw error;
+        }
+      },
       multi: true,
       deps: [Injector],
     },
     // * client event logging (ensure DB initialized first)
     {
       provide: APP_INITIALIZER,
-      useFactory: (injector: Injector, svc: ClientEventLoggingService) => () =>
-        (async () => {
-          // Wait for DB init (idempotent if already initialized)
-          await initDatabase(injector);
-          await svc.init();
-        })(),
+      useFactory:
+        (dbService: DatabaseService, svc: ClientEventLoggingService) => () =>
+          (async () => {
+            // Wait for DB init (idempotent if already initialized)
+            await dbService.initializeDatabase();
+            await svc.init();
+          })(),
       multi: true,
-      deps: [Injector, ClientEventLoggingService],
+      deps: [DatabaseService, ClientEventLoggingService],
     },
     // * workflow preload
     {
@@ -86,11 +170,6 @@ import { OfflineBannerComponent } from './components/offline-banner/offline-bann
     },
     DatabaseService,
     WorkflowPreloadService,
-    // * global error handler
-    {
-      provide: ErrorHandler,
-      useClass: GlobalErrorHandlerService,
-    },
     // * HTTP interceptors
     {
       provide: HTTP_INTERCEPTORS,

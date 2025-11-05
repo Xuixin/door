@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { NetworkStatusService } from '../../core/Database/core/services/network-status.service';
+import { NetworkStatusService } from '../../core/Database/services/network-status.service';
 import { Subscription } from 'rxjs';
 
 @Component({
