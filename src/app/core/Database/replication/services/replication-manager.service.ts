@@ -95,10 +95,6 @@ export class ReplicationManagerService {
     );
     const allStates = Array.from(this.replicationStates.values());
 
-    // Cancel all replications - don't check active$ state
-    // active$ only shows if pull/push operations are currently running
-    // Replication may be waiting for next cycle even if active$ is false
-
     allStates.forEach((state) => {
       console.log(state as any);
     });
@@ -111,7 +107,7 @@ export class ReplicationManagerService {
           wasStarted,
         );
         if (wasStarted) {
-          await state.cancel();
+          await state.internalReplicationState?.downstreamBulkWriteFlag;
         } else {
           console.log(
             '⏭️ [ReplicationManager] Replication not started, skipping cancel',

@@ -89,10 +89,11 @@ export function setupCollectionReplication<T = any>(
           responseModifier: responseModifier,
           includeWsHeaders: true,
           wsOptions: {
-            retryAttempts: 10,
+            retryAttempts: 3,
             connectionParams: () => ({
               id: config.serverId,
             }),
+            
           },
         }
       : undefined, // Disable pull if no pullQueryBuilder provided
