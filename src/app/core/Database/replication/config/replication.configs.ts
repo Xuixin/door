@@ -4,17 +4,17 @@ import {
   pullTransactionQueryBuilder,
   pushTransactionQueryBuilder,
   pullStreamTransactionQueryBuilder,
-} from '../services/query-builder-functions';
+} from '../../collection/txn/replication-query-builders';
 import {
   pullDeviceMonitoringQueryBuilder,
   pullStreamDeviceMonitoringQueryBuilder,
-} from '../services/query-builder-functions';
-import { pushDeviceMonitoringHistoryQueryBuilder } from '../services/query-builder-functions';
+} from '../../collection/device-monitoring/replication-query-builders';
+import { pushDeviceMonitoringHistoryQueryBuilder } from '../../collection/device-monitoring-history/replication-query-builders';
 import {
   pullDeviceEventQueryBuilder,
   pushDeviceEventQueryBuilder,
   pullStreamDeviceEventQueryBuilder,
-} from '../services/query-builder-functions';
+} from '../../collection/device-event/replication-query-builders';
 import { PRIMARY_IDENTIFIERS, SECONDARY_IDENTIFIERS } from '../constants';
 import { ReplicationConfig } from '../services/replication-helper';
 import { createDeviceEvents } from 'src/app/core/Database/collection/device-event/helper';

@@ -4,7 +4,8 @@ import { removeGraphQLWebSocketRef } from 'rxdb/plugins/replication-graphql';
 import { RxCollection } from 'rxdb';
 import { ReplicationConfigBuilder } from './replication-config-builder';
 import { ClientIdentityService } from '../../../../services/client-identity.service';
-import { ServerHealthService } from '../../services/server-health.service';
+import { ReplicationCoordinatorService } from '../../services/replication-coordinator.service';
+import { isPrimaryIdentifier, isSecondaryIdentifier } from '../utils';
 
 export interface ReplicationConfig {
   name: string;
@@ -29,7 +30,7 @@ export interface ReplicationConfig {
  */
 export function setupCollectionReplication<T = any>(
   config: ReplicationConfig,
-  serverHealthService?: ServerHealthService,
+  replicationCoordinator?: ReplicationCoordinatorService,
 ): RxGraphQLReplicationState<T, any> {
   // Create response modifier for checkpoint field normalization (only if pull is enabled)
   const responseModifier = config.pullQueryBuilder
@@ -99,9 +100,16 @@ export function setupCollectionReplication<T = any>(
             on: {
               closed: (event: any) => {
                 // Use queueMicrotask to prevent blocking WebSocket event handlers
-                if (event.code === 1006 && serverHealthService) {
+                if (event.code === 1006 && replicationCoordinator) {
                   queueMicrotask(() => {
-                    serverHealthService.handleDisconnect();
+                    // Determine server type from replication identifier
+                    if (isPrimaryIdentifier(config.replicationIdentifier)) {
+                      replicationCoordinator.handlePrimaryServerDown();
+                    } else if (
+                      isSecondaryIdentifier(config.replicationIdentifier)
+                    ) {
+                      replicationCoordinator.handleSecondaryServerDown();
+                    }
                   });
                 }
               },

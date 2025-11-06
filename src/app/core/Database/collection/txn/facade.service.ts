@@ -1,7 +1,6 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { RxCollection } from 'rxdb';
 import { BaseFacadeService } from '../../services/base-facade.service';
-import { ReplicationStateMonitorService } from '../../replication';
 
 export interface TransactionStats {
   total: number;
@@ -18,8 +17,6 @@ export interface TransactionStats {
   providedIn: 'root',
 })
 export class TransactionService extends BaseFacadeService<any> {
-  private readonly replicationMonitor = inject(ReplicationStateMonitorService);
-
   // Signals for reactive data
   private _transactions = signal<any[]>([]);
   public readonly transactions = this._transactions.asReadonly();
@@ -78,29 +75,6 @@ export class TransactionService extends BaseFacadeService<any> {
       },
     });
     this.addSubscription(dbSubscription);
-
-    // Subscribe to replication events if available
-    try {
-      const replicationReceived$ =
-        this.replicationMonitor.getCollectionReplicationReceived$(
-          'transaction',
-        );
-      if (replicationReceived$) {
-        const replicationSubscription = replicationReceived$.subscribe({
-          next: (received) => {
-            console.log('🔄 Replication received:', received);
-            // Refresh transactions when replication receives data
-            this.refreshTransactions();
-          },
-          error: (error) => {
-            console.error('❌ Error in replication subscription:', error);
-          },
-        });
-        this.addSubscription(replicationSubscription);
-      }
-    } catch (error) {
-      console.warn('⚠️ Could not subscribe to replication events:', error);
-    }
   }
 
   /**

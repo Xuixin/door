@@ -1,5 +1,5 @@
-import { Component, OnDestroy } from '@angular/core';
-import { ServerHealthService } from '../../core/Database/services/server-health.service';
+import { Component, OnDestroy, inject } from '@angular/core';
+import { ReplicationCoordinatorService } from '../../core/Database/services/replication-coordinator.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -13,18 +13,16 @@ import { Subscription } from 'rxjs';
 export class StatusComponent implements OnDestroy {
   isOnline = false;
   private sub: Subscription;
+  private coordinator = inject(ReplicationCoordinatorService);
 
-  constructor(private health: ServerHealthService) {
-    this.sub = this.health.isOnline$.subscribe((state) => {
-      this.isOnline = state;
+  constructor() {
+    // Check replication state - if not stopped, server is online
+    const currentState = this.coordinator.getCurrentState();
+    this.isOnline = currentState !== 'stopped';
 
-      if (!state) {
-        console.warn('⚠️ server down → cancel replication here');
-        // replicationState.cancel();
-      } else {
-        console.log('✅ server up → restart replication');
-        // restartReplication();
-      }
+    // Subscribe to replication stopped state changes
+    this.sub = this.coordinator.replicationsStopped$.subscribe((stopped) => {
+      this.isOnline = !stopped;
     });
   }
 

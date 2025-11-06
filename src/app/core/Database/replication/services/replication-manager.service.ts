@@ -11,7 +11,7 @@ import { createReplicationConfigs } from '../config';
 import { PRIMARY_IDENTIFIERS, SECONDARY_IDENTIFIERS } from '../constants';
 import { isPrimaryIdentifier, isSecondaryIdentifier } from '../utils';
 import { DeviceEventFacade } from '../../collection/device-event/facade.service';
-import { ServerHealthService } from '../../services/server-health.service';
+import { ReplicationCoordinatorService } from '../../services/replication-coordinator.service';
 
 interface DatabaseCollections {
   transaction: RxCollection;
@@ -26,24 +26,11 @@ interface DatabaseCollections {
 export class ReplicationManagerService {
   private replicationStates: Map<string, RxGraphQLReplicationState<any, any>> =
     new Map();
-  private replicationMonitorService: any = null;
   private injector = inject(Injector);
 
-  /**
-   * Set replication monitor service (called after initialization to avoid circular dependency)
-   */
-  setReplicationMonitorService(monitorService: any): void {
-    this.replicationMonitorService = monitorService;
-  }
-
-  /**
-   * Notify replication monitor about state changes
-   */
-  private notifyReplicationMonitor(): void {
-    if (this.replicationMonitorService?.notifyStateChange) {
-      this.replicationMonitorService.notifyStateChange();
-    }
-  }
+  // State tracking
+  private _isStarted: boolean = false;
+  private _currentServerType: 'primary' | 'secondary' | null = null;
 
   /**
    * Get wasStarted flag from replication state
@@ -223,23 +210,52 @@ export class ReplicationManagerService {
   }
 
   /**
-   * Stop all replications gracefully without throwing errors
-   * Cancels all replications (primary + secondary) without checking active state
-   * Wraps each cancellation in try-catch to prevent errors
+   * Check server status and return which server can be used
+   * @returns Promise<'primary' | 'secondary' | 'bothDown'>
    */
-  async stopAllReplicationsGracefully(): Promise<void> {
-    console.log(
-      '🛑 [ReplicationManager] Stopping all replications gracefully...',
+  async checkServerStatus(): Promise<'primary' | 'secondary' | 'bothDown'> {
+    const primaryAvailable = await this.checkServerAvailability(
+      environment.apiUrl,
     );
-    const allStates = Array.from(this.replicationStates.entries());
-
-    for (const [identifier, state] of allStates) {
-      await this.cancelSingleReplication(identifier, state);
+    if (primaryAvailable) {
+      return 'primary';
     }
 
-    this.replicationStates.clear();
+    const secondaryUrl = environment.apiSecondaryUrl || environment.apiUrl;
+    const secondaryAvailable = await this.checkServerAvailability(secondaryUrl);
+    if (secondaryAvailable) {
+      return 'secondary';
+    }
 
-    this.notifyReplicationMonitor();
+    return 'bothDown';
+  }
+
+  /**
+   * Get current started state
+   */
+  isStarted(): boolean {
+    return this._isStarted;
+  }
+
+  /**
+   * Get current server type
+   */
+  getCurrentServerType(): 'primary' | 'secondary' | null {
+    return this._currentServerType;
+  }
+
+  /**
+   * Check if replication can be closed/stopped
+   */
+  canClose(): boolean {
+    return this._isStarted;
+  }
+
+  /**
+   * Check if replication can be started
+   */
+  canStart(): boolean {
+    return !this._isStarted || this.replicationStates.size === 0;
   }
 
   /**
@@ -262,7 +278,7 @@ export class ReplicationManagerService {
       console.log(
         '🔄 [ReplicationManager] Stopping existing replications before initialization...',
       );
-      await this.stopAllReplicationsGracefully();
+      await this.stopReplication();
     }
 
     // Create replication configs using the config factory
@@ -273,40 +289,19 @@ export class ReplicationManagerService {
       emitPrimaryRecoveryFn,
     );
 
-    // If offline, all replications should have autoStart=false
-    const bothServersDown = await this.checkBothServersDown();
-
-    let statesActivedata = [];
+    // Set autoStart=false for all replications - will be started explicitly via startReplication()
     // Initialize all replications
     for (const config of replicationConfigs) {
       try {
-        if (bothServersDown) {
-          config.autoStart = false;
-        } else {
-          // Set autoStart based on which server we're using
-          if (useSecondary) {
-            // Using secondary server - enable secondary replications, disable primary
-            if (isSecondaryIdentifier(config.replicationIdentifier)) {
-              config.autoStart = true; // Enable autoStart for secondary
-            } else {
-              config.autoStart = false; // Disable autoStart for primary
-            }
-          } else {
-            // Using primary server - enable primary replications, disable secondary
-            if (isPrimaryIdentifier(config.replicationIdentifier)) {
-              config.autoStart = true; // Enable autoStart for primary
-            } else {
-              config.autoStart = false; // Disable autoStart for secondary
-            }
-          }
-        }
+        config.autoStart = false;
 
         // Use lazy injection to avoid circular dependency
-        // ServerHealthService -> ReplicationCoordinatorService -> ReplicationManagerService
-        const serverHealthService = this.injector.get(ServerHealthService);
+        const replicationCoordinator = this.injector.get(
+          ReplicationCoordinatorService,
+        );
         const replicationState = setupCollectionReplication(
           config,
-          serverHealthService,
+          replicationCoordinator,
         );
 
         // Track wasStarted flag - will be set to true when actually started
@@ -316,23 +311,6 @@ export class ReplicationManagerService {
           config.replicationIdentifier,
           replicationState,
         );
-
-        // Log initial active state
-        const initialActive =
-          (replicationState as any).active$?.getValue?.() ?? false;
-
-        statesActivedata.push({
-          [config.replicationIdentifier]: initialActive,
-        });
-        // If autoStart is true, track when replication actually starts
-        if (config.autoStart) {
-          // Subscribe to active$ to track when replication starts
-          replicationState.active$.subscribe((active) => {
-            if (active && !this.getWasStarted(replicationState)) {
-              this.setWasStarted(replicationState, true);
-            }
-          });
-        }
       } catch (error) {
         console.error(
           `❌ [ReplicationManager] Failed to initialize replication: ${config.name}`,
@@ -340,17 +318,102 @@ export class ReplicationManagerService {
         );
       }
     }
-
-    console.log('statesActivedata', statesActivedata);
-
-    // Notify replication monitor about state changes
-    setTimeout(() => this.notifyReplicationMonitor(), 500);
   }
 
   /**
-   * Start replications by identifiers
+   * Get replication states data for logging
+   * Returns array of objects with replication identifier and active status
    */
-  private async startReplicationsByIdentifiers(
+  getReplicationStatesData(): Array<{ [key: string]: boolean }> {
+    const statesData: Array<{ [key: string]: boolean }> = [];
+
+    Array.from(this.replicationStates.entries()).forEach(
+      ([identifier, state]) => {
+        const isActive = (state as any).active$?.getValue?.() ?? false;
+        const wasStarted = this.getWasStarted(state);
+        statesData.push({
+          [identifier]: isActive || wasStarted,
+        });
+      },
+    );
+
+    return statesData;
+  }
+
+  /**
+   * Log replication states data
+   */
+  logReplicationStates(): void {
+    const statesData = this.getReplicationStatesData();
+    console.log('📊 [ReplicationManager] Summary:', {
+      total: statesData.length,
+      started: this._isStarted,
+      serverType: this._currentServerType,
+      states: statesData,
+    });
+  }
+
+  /**
+   * Start replication - single entry point with state checking
+   * @param serverType - 'primary' or 'secondary', if not provided will check server status
+   */
+  async startReplication(serverType?: 'primary' | 'secondary'): Promise<void> {
+    // Check if already started with same server type
+    if (this._isStarted && this._currentServerType === serverType) {
+      console.log(
+        `⏭️ [ReplicationManager] Already started with ${serverType}, skipping`,
+      );
+      return;
+    }
+
+    // If no serverType provided, check server status
+    if (!serverType) {
+      const status = await this.checkServerStatus();
+      if (status === 'bothDown') {
+        console.warn(
+          '⚠️ [ReplicationManager] Both servers down, cannot start replication',
+        );
+        return;
+      }
+      serverType = status;
+    }
+
+    // If already started with different server type, stop current first
+    if (this._isStarted && this._currentServerType !== serverType) {
+      console.log(
+        `🔄 [ReplicationManager] Switching from ${this._currentServerType} to ${serverType}...`,
+      );
+      await this.stopReplication();
+      // Wait a bit for cleanup
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    // Check if replication states exist
+    if (this.replicationStates.size === 0) {
+      console.warn(
+        '⚠️ [ReplicationManager] No replication states found, cannot start. Reinitialization required.',
+      );
+      // Reset state flags since states are cleared
+      this._isStarted = false;
+      this._currentServerType = null;
+      return;
+    }
+
+    // Start replications
+    await this._startReplicationsByIdentifiers(
+      serverType === 'primary' ? PRIMARY_IDENTIFIERS : SECONDARY_IDENTIFIERS,
+      serverType,
+    );
+
+    // Update state
+    this._isStarted = true;
+    this._currentServerType = serverType;
+  }
+
+  /**
+   * Start replications by identifiers (internal helper)
+   */
+  private async _startReplicationsByIdentifiers(
     identifiers: readonly string[],
     serverType: 'primary' | 'secondary',
   ): Promise<void> {
@@ -423,132 +486,6 @@ export class ReplicationManagerService {
   }
 
   /**
-   * Start secondary replications (without canceling primary)
-   * Use this when server is down at runtime - don't cancel inactive primary replications
-   */
-  async startSecondary(): Promise<void> {
-    await this.startReplicationsByIdentifiers(
-      SECONDARY_IDENTIFIERS,
-      'secondary',
-    );
-  }
-
-  /**
-   * Start primary replications (without canceling secondary)
-   * Use this when initializing with primary available
-   */
-  async startPrimary(): Promise<void> {
-    await this.startReplicationsByIdentifiers(PRIMARY_IDENTIFIERS, 'primary');
-  }
-
-  /**
-   * Check if replications are active by identifiers
-   */
-  private areReplicationsActiveByIdentifiers(
-    identifiers: readonly string[],
-  ): boolean {
-    for (const identifier of identifiers) {
-      const state = this.replicationStates.get(identifier);
-      if (state) {
-        const wasStarted = this.getWasStarted(state);
-        const isActive = (state as any).active$?.getValue?.() ?? false;
-        if (wasStarted || isActive) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Check if secondary replications are already active
-   */
-  private areSecondaryReplicationsActive(): boolean {
-    return this.areReplicationsActiveByIdentifiers(SECONDARY_IDENTIFIERS);
-  }
-
-  /**
-   * Check if primary replications are already active
-   */
-  private arePrimaryReplicationsActive(): boolean {
-    return this.areReplicationsActiveByIdentifiers(PRIMARY_IDENTIFIERS);
-  }
-
-  /**
-   * Switch all replications from primary to secondary
-   * Use this when server goes down at runtime (after initial startup)
-   */
-  async switchToSecondary(): Promise<void> {
-    // Check if replication states exist
-    if (this.replicationStates.size === 0) {
-      console.warn(
-        '⚠️ [ReplicationManager] No replication states found, cannot switch to secondary. Reinitialization required.',
-      );
-      return;
-    }
-
-    // Check if secondary replications are already active
-    if (this.areSecondaryReplicationsActive()) {
-      console.log(
-        '⏭️ [ReplicationManager] Secondary replications already active, skipping switch',
-      );
-      return;
-    }
-
-    console.log(
-      '🔄 [ReplicationManager] Switching to secondary replications...',
-    );
-
-    // Cancel all primary replications (only if they are active)
-    await this.cancelPrimaryReplications();
-
-    // Wait a bit for cleanup
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // Start secondary replications
-    await this.startSecondary();
-
-    // Notify replication monitor about state changes
-    setTimeout(() => this.notifyReplicationMonitor(), 200);
-  }
-
-  /**
-   * Switch all replications from secondary back to primary
-   * Use this when primary server recovers at runtime
-   */
-  async switchToPrimary(): Promise<void> {
-    // Check if replication states exist
-    if (this.replicationStates.size === 0) {
-      console.warn(
-        '⚠️ [ReplicationManager] No replication states found, cannot switch to primary. Reinitialization required.',
-      );
-      return;
-    }
-
-    // Check if primary replications are already active
-    if (this.arePrimaryReplicationsActive()) {
-      console.log(
-        '⏭️ [ReplicationManager] Primary replications already active, skipping switch',
-      );
-      return;
-    }
-
-    console.log('🔄 [ReplicationManager] Switching to primary replications...');
-
-    // Cancel all secondary replications (only if they are active)
-    await this.cancelSecondaryReplications();
-
-    // Wait a bit for cleanup
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // Start primary replications
-    await this.startPrimary();
-
-    // Notify replication monitor about state changes
-    setTimeout(() => this.notifyReplicationMonitor(), 200);
-  }
-
-  /**
    * Cancel replications by identifiers
    */
   private async cancelReplicationsByIdentifiers(
@@ -601,11 +538,19 @@ export class ReplicationManagerService {
   }
 
   /**
-   * Stop all replications (for cleanup on app destroy)
+   * Stop all replications - single entry point with state checking
    * Note: Don't check active$ - it only indicates if pull/push is currently running
    * We need to cancel all replications regardless of active$ state
    */
   async stopReplication(): Promise<void> {
+    // Check if already stopped
+    if (!this._isStarted) {
+      console.log(
+        '⏭️ [ReplicationManager] Already stopped, skipping stop operation',
+      );
+      return;
+    }
+
     console.log('🛑 [ReplicationManager] Stopping all replications...');
     const allStates = Array.from(this.replicationStates.entries());
 
@@ -616,12 +561,13 @@ export class ReplicationManagerService {
       await this.cancelSingleReplication(identifier, state);
     }
 
+    // Update state
+    this._isStarted = false;
+    this._currentServerType = null;
+
     // Clear replication states map
     this.replicationStates.clear();
     console.log('✅ [ReplicationManager] All replications stopped');
-
-    // Notify replication monitor about state changes
-    this.notifyReplicationMonitor();
   }
 
   /**
@@ -673,8 +619,5 @@ export class ReplicationManagerService {
       emitPrimaryRecoveryFn,
     );
     console.log('✅ [ReplicationManager] Replications reinitialized');
-
-    // Notify replication monitor about state changes
-    setTimeout(() => this.notifyReplicationMonitor(), 500);
   }
 }

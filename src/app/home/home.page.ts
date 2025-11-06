@@ -18,7 +18,6 @@ import {
 import { TransactionService } from './../core/Database/collection/txn';
 import { DatabaseService } from '../core/Database/services/database.service';
 import { ReplicationCoordinatorService } from '../core/Database/services/replication-coordinator.service';
-import { ServerHealthService } from '../core/Database/services/server-health.service';
 import { DeviceSelectionModalComponent } from '../components/device-selection-modal/device-selection-modal.component';
 import { ClientIdentityService } from '../services/client-identity.service';
 
@@ -44,7 +43,6 @@ export class HomePage implements OnInit, OnDestroy {
   private readonly transactionService = inject(TransactionService);
   private readonly databaseService = inject(DatabaseService);
   private readonly coordinator = inject(ReplicationCoordinatorService);
-  private readonly serverHealth = inject(ServerHealthService);
   private readonly identityService = inject(ClientIdentityService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly modalController = inject(ModalController);
@@ -392,8 +390,6 @@ export class HomePage implements OnInit, OnDestroy {
         console.log(
           `✅ [HomePage] Successfully started replications on ${result.server} server`,
         );
-        // Start ServerHealth monitoring after successful manual start
-        this.serverHealth.startMonitoring();
       } else {
         // Show alert if both servers are still unavailable
         const alert = await this.alertController.create({
@@ -415,5 +411,12 @@ export class HomePage implements OnInit, OnDestroy {
     } finally {
       this.isStartingReplication.set(false);
     }
+  }
+
+  /**
+   * Log replication states data
+   */
+  logReplicationStates(): void {
+    this.databaseService.logReplicationStates();
   }
 }

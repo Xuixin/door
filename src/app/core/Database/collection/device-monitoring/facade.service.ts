@@ -3,7 +3,6 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { RxCollection } from 'rxdb';
 import { BaseFacadeService } from '../../services/base-facade.service';
-import { ReplicationStateMonitorService } from '../../replication';
 import { environment } from 'src/environments/environment';
 import { ClientIdentityService } from './../../../../services/client-identity.service';
 
@@ -34,7 +33,6 @@ export interface DeviceMonitoringDocument {
 })
 export class DeviceMonitoringFacade extends BaseFacadeService<DeviceMonitoringDocument> {
   private readonly identity = inject(ClientIdentityService);
-  private readonly replicationMonitor = inject(ReplicationStateMonitorService);
 
   // Signals for reactive data
   private _deviceMonitoring = signal<DeviceMonitoringDocument[]>([]);
@@ -118,32 +116,6 @@ export class DeviceMonitoringFacade extends BaseFacadeService<DeviceMonitoringDo
     });
 
     this.addSubscription(subscription);
-
-    // Subscribe to replication events if available
-    try {
-      const replicationReceived$ =
-        this.replicationMonitor.getCollectionReplicationReceived$(
-          'devicemonitoring',
-        );
-      if (replicationReceived$) {
-        const replicationSubscription = replicationReceived$.subscribe({
-          next: (received) => {
-            console.log('🔄 Device monitoring replication received:', received);
-            // Refresh device monitoring when replication receives data
-            this.refreshDeviceMonitoring();
-          },
-          error: (error) => {
-            console.error(
-              '❌ Error in device monitoring replication subscription:',
-              error,
-            );
-          },
-        });
-        this.addSubscription(replicationSubscription);
-      }
-    } catch (error) {
-      console.warn('⚠️ Could not subscribe to replication events:', error);
-    }
   }
 
   /**

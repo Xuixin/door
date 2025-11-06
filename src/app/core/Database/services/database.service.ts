@@ -36,14 +36,6 @@ export class DatabaseService {
   private primaryRecoveryListeners: Set<() => void | Promise<void>> = new Set();
 
   /**
-   * Set replication monitor service (called after initialization to avoid circular dependency)
-   * Delegates to ReplicationManagerService
-   */
-  setReplicationMonitorService(monitorService: any): void {
-    this.replicationManager.setReplicationMonitorService(monitorService);
-  }
-
-  /**
    * Initialize database and collections
    * Will skip if clientId is not available yet (waits for device-selection-modal)
    * Prevents duplicate initialization on refresh
@@ -160,15 +152,14 @@ export class DatabaseService {
             environment.apiUrl,
           );
           let useSecondary = false;
+          let secondaryAvailable = false;
 
           if (!primaryAvailable) {
             const secondaryUrl =
               environment.apiSecondaryUrl || environment.apiUrl;
-            const secondaryAvailable = await this.checkConnection(secondaryUrl);
+            secondaryAvailable = await this.checkConnection(secondaryUrl);
 
             if (!secondaryAvailable) {
-
-
               const serverId =
                 (await this.identity.getClientId()) || environment.serverId;
 
@@ -215,6 +206,14 @@ export class DatabaseService {
             deviceEventFacade,
             () => this.emitPrimaryRecoveryEvent(),
           );
+
+          // Start replication after initialization (only if at least one server is available)
+          const bothDown = !primaryAvailable && !secondaryAvailable;
+          if (!bothDown) {
+            await this.replicationManager.startReplication(
+              useSecondary ? 'secondary' : 'primary',
+            );
+          }
         } catch (replicationError: any) {
           console.warn(
             '⚠️ [NewDatabase] Replication initialization failed (may be offline):',
@@ -313,19 +312,19 @@ export class DatabaseService {
   }
 
   /**
-   * Switch all replications from primary to secondary
+   * Log replication states data
    * Delegates to ReplicationManagerService
    */
-  async switchToSecondary(): Promise<void> {
-    return this.replicationManager.switchToSecondary();
+  logReplicationStates(): void {
+    this.replicationManager.logReplicationStates();
   }
 
   /**
-   * Switch all replications from secondary back to primary
+   * Start replication - single entry point
    * Delegates to ReplicationManagerService
    */
-  async switchToPrimary(): Promise<void> {
-    return this.replicationManager.switchToPrimary();
+  async startReplication(serverType?: 'primary' | 'secondary'): Promise<void> {
+    return this.replicationManager.startReplication(serverType);
   }
 
   /**

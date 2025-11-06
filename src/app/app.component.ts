@@ -4,7 +4,6 @@ import { DatabaseService } from './core/Database/services/database.service';
 import { ReplicationCoordinatorService } from './core/Database/services/replication-coordinator.service';
 import { ClientHealthService } from './core/Database/services/client-health.service';
 import 'zone.js/plugins/zone-patch-rxjs';
-import { ServerHealthService } from './core/Database/services/server-health.service';
 @Component({
   selector: 'app-root',
   standalone: false,
@@ -17,7 +16,6 @@ export class AppComponent implements OnInit, OnDestroy {
     private coordinator: ReplicationCoordinatorService,
     // Inject ClientHealthService to initialize offline/online monitoring
     private clientHealthService: ClientHealthService,
-    private serverHealthService: ServerHealthService,
   ) {}
 
   async ngOnInit() {
