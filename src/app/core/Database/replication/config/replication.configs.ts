@@ -14,8 +14,15 @@ import {
   pushDeviceMonitoringHistoryQueryBuilder,
   pullStreamDeviceMonitoringHistoryQueryBuilder,
 } from '../services/query-builder-functions';
+import {
+  pullDeviceEventQueryBuilder,
+  pushDeviceEventQueryBuilder,
+  pullStreamDeviceEventQueryBuilder,
+} from '../services/query-builder-functions';
 import { PRIMARY_IDENTIFIERS, SECONDARY_IDENTIFIERS } from '../constants';
 import { ReplicationConfig } from '../services/replication-helper';
+import { createDeviceEvents } from 'src/app/core/Database/collection/device-event/helper';
+import { DeviceEventFacade } from 'src/app/core/Database/collection/device-event/facade.service';
 
 interface DatabaseCollections {
   transaction: RxCollection;
@@ -28,12 +35,14 @@ interface DatabaseCollections {
  * Create all replication configurations
  * @param db - RxDatabase instance
  * @param serverId - Server ID for replication
+ * @param deviceEventFacade - DeviceEventFacade instance for creating device events
  * @param emitPrimaryRecoveryFn - Function to emit primary recovery event
  * @returns Array of replication configurations
  */
 export function createReplicationConfigs(
   db: RxDatabase<DatabaseCollections>,
   serverId: string,
+  deviceEventFacade: DeviceEventFacade,
   emitPrimaryRecoveryFn: () => Promise<void>,
 ): ReplicationConfig[] {
   const replicationConfigs: ReplicationConfig[] = [
@@ -51,8 +60,12 @@ export function createReplicationConfigs(
       },
       replicationIdentifier: PRIMARY_IDENTIFIERS[0], // 'txn-primary-10102'
       serverId: serverId,
-      // Device events are now created automatically via DeviceEventFacade subscription
-      // No need for onReceived callback here
+      onReceived: async (docs) => {
+        // Create device events for received transactions
+        if (docs && docs.length > 0) {
+          await createDeviceEvents(deviceEventFacade, docs, 'miniserver');
+        }
+      },
     },
     // Transaction Secondary
     {
@@ -69,8 +82,12 @@ export function createReplicationConfigs(
       replicationIdentifier: SECONDARY_IDENTIFIERS[0], // 'txn-secondary-3001'
       serverId: serverId,
       autoStart: false, // Don't start until needed
-      // Device events are now created automatically via DeviceEventFacade subscription
-      // No need for onReceived callback here
+      onReceived: async (docs) => {
+        // Create device events for received transactions
+        if (docs && docs.length > 0) {
+          await createDeviceEvents(deviceEventFacade, docs, 'cloud');
+        }
+      },
     },
     // Device Monitoring Primary (readOnly - no push)
     {
@@ -168,6 +185,37 @@ export function createReplicationConfigs(
           );
         }
       },
+    },
+    // Device Event Primary
+    {
+      name: 'deviceevent-primary',
+      collection: db.device_event,
+      pullQueryBuilder: pullDeviceEventQueryBuilder,
+      pushQueryBuilder: pushDeviceEventQueryBuilder,
+      pullStreamQueryBuilder: pullStreamDeviceEventQueryBuilder,
+      checkpointField: 'server_updated_at',
+      urls: {
+        http: environment.apiUrl,
+        ws: environment.wsUrl,
+      },
+      replicationIdentifier: PRIMARY_IDENTIFIERS[3], // 'device_event-primary-10102'
+      serverId: serverId,
+    },
+    // Device Event Secondary
+    {
+      name: 'deviceevent-secondary',
+      collection: db.device_event,
+      pullQueryBuilder: pullDeviceEventQueryBuilder,
+      pushQueryBuilder: pushDeviceEventQueryBuilder,
+      pullStreamQueryBuilder: pullStreamDeviceEventQueryBuilder,
+      checkpointField: 'cloud_updated_at',
+      urls: {
+        http: environment.apiSecondaryUrl || environment.apiUrl,
+        ws: environment.wsSecondaryUrl || environment.wsUrl,
+      },
+      replicationIdentifier: SECONDARY_IDENTIFIERS[3], // 'device_event-secondary-3001'
+      serverId: serverId,
+      autoStart: false, // Don't start until needed
     },
   ];
 

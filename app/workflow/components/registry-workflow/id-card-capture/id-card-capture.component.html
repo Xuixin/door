@@ -1,0 +1,194 @@
+<div class="flex h-full flex-col bg-gray-50">
+  <!-- Header -->
+  <div
+    class="flex flex-col items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:px-8"
+  >
+    <div class="text-2xl font-bold text-blue-600 sm:text-3xl">
+      FastPass Registry
+    </div>
+    <div
+      class="flex-1 text-center text-base font-medium text-gray-700 sm:text-lg"
+    >
+      ถ่ายภาพบัตรประชาชน
+    </div>
+    <p-button
+      icon="pi pi-times-circle"
+      severity="secondary"
+      size="small"
+      [text]="true"
+      class="text-lg"
+      (onClick)="close()"
+    ></p-button>
+  </div>
+
+  <!-- Content -->
+  <div class="flex-1 overflow-hidden">
+    <div
+      class="relative flex h-full w-full items-center justify-center bg-black"
+    >
+      <!-- Hidden Video Element -->
+      <video #videoElement autoplay playsinline muted class="hidden"></video>
+
+      <!-- Camera Canvas -->
+      <canvas
+        #cameraCanvas
+        [class.transform]="isFrontCamera"
+        [class.scale-x-[-1]]="isFrontCamera"
+        [style.display]="
+          !isCameraLoading && !errorMessage && !capturedImage ? 'block' : 'none'
+        "
+        class="h-full w-full object-cover"
+      ></canvas>
+
+      <!-- Loading State -->
+      <div
+        *ngIf="isCameraLoading"
+        class="flex h-full flex-col items-center justify-center text-white"
+      >
+        <div
+          class="mb-4 h-16 w-16 animate-spin rounded-full border-4 border-gray-600 border-t-blue-500"
+        ></div>
+        <p class="text-base sm:text-lg">กำลังเปิดกล้อง...</p>
+      </div>
+
+      <!-- Error Message -->
+      <div
+        *ngIf="errorMessage"
+        class="m-4 max-w-md rounded-lg bg-red-50 border-2 border-red-200 p-6 text-center"
+      >
+        <div class="mb-2 text-4xl">⚠️</div>
+        <div class="text-sm font-medium text-red-600 sm:text-base">
+          {{ errorMessage }}
+        </div>
+      </div>
+
+      <!-- Camera Overlay Guide (Live Camera) -->
+      <div
+        *ngIf="!isCameraLoading && !errorMessage && !capturedImage"
+        class="pointer-events-none absolute inset-0 flex items-center justify-center"
+      >
+        <div
+          class="relative h-[60%] w-[85%] max-w-xl rounded-2xl border-4 border-dashed border-white opacity-60 sm:h-[70%] sm:w-[80%]"
+        >
+          <div
+            class="absolute -top-8 left-1/2 -translate-x-1/2 rounded-lg bg-black bg-opacity-70 px-4 py-2 text-center text-xs text-white sm:text-sm"
+          >
+            📸 วางบัตรประชาชนให้อยู่ในกรอบ
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera Controls (Live Camera) -->
+      <div
+        class="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4 px-4 sm:gap-6"
+        *ngIf="!isCameraLoading && !errorMessage && !capturedImage"
+      >
+        <!-- Switch Camera Button -->
+        <p-button
+          icon="pi pi-refresh"
+          severity="secondary"
+          size="large"
+          [style]="{
+            width: '48px',
+            height: '48px',
+            'border-radius': '50%',
+            'background-color': 'white',
+            'box-shadow': '0 4px 12px rgba(0,0,0,0.15)'
+          }"
+          (onClick)="switchCamera()"
+          *ngIf="cameras.length > 1"
+        ></p-button>
+
+        <!-- Capture Button -->
+        <p-button
+          icon="pi pi-camera"
+          severity="primary"
+          size="large"
+          [style]="{
+            width: '70px',
+            height: '70px',
+            'border-radius': '50%',
+            border: '4px solid white',
+            'box-shadow': '0 10px 25px rgba(0,0,0,0.3)'
+          }"
+          (onClick)="capturePhoto()"
+        ></p-button>
+      </div>
+
+      <!-- Preview Image -->
+      <div
+        *ngIf="capturedImage"
+        class="relative flex h-full w-full flex-col items-center justify-center bg-gray-900"
+      >
+        <img
+          [src]="capturedImage"
+          class="max-h-[calc(100%-120px)] max-w-full rounded-lg object-contain shadow-2xl sm:max-h-[calc(100%-140px)]"
+          alt="Captured ID Card"
+        />
+
+        <!-- Preview Controls -->
+        <div
+          class="absolute bottom-8 left-0 right-0 flex justify-center gap-4 px-4"
+        >
+          <p-button
+            icon="pi pi-refresh"
+            severity="secondary"
+            size="large"
+            [style]="{
+              width: '56px',
+              height: '56px',
+              'border-radius': '50%',
+              'background-color': 'white',
+              'box-shadow': '0 4px 12px rgba(0,0,0,0.15)'
+            }"
+            (onClick)="retakePhoto()"
+          ></p-button>
+          <p-button
+            icon="pi pi-check"
+            label="ใช้รูปนี้"
+            severity="primary"
+            size="large"
+            [style]="{
+              height: '56px',
+              'border-radius': '28px',
+              padding: '0 32px',
+              'box-shadow': '0 4px 12px rgba(0,0,0,0.15)'
+            }"
+            (onClick)="saveAndNext()"
+          ></p-button>
+        </div>
+
+        <!-- Image Info (Optional) -->
+        <div
+          class="absolute top-4 right-4 rounded-lg bg-black bg-opacity-70 px-3 py-2 text-xs text-white sm:text-sm"
+        >
+          ✓ ถ่ายรูปสำเร็จ
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div
+    class="flex flex-col items-center justify-between gap-4 border-t border-gray-200 bg-white px-4 py-4 shadow-lg sm:flex-row sm:px-8"
+  >
+    <div class="text-xs text-gray-700 sm:text-base">
+      💡 เคล็ดลับ: ถ่ายในที่มีแสงสว่างเพียงพอ และวางบัตรให้ตรง
+    </div>
+    <div class="flex gap-2 sm:gap-4">
+      <p-button
+        label="ยกเลิก"
+        severity="secondary"
+        size="small"
+        (onClick)="close()"
+      ></p-button>
+      <p-button
+        label="ถัดไป →"
+        severity="primary"
+        size="small"
+        (onClick)="saveAndNext()"
+        [disabled]="!capturedImage"
+      ></p-button>
+    </div>
+  </div>
+</div>

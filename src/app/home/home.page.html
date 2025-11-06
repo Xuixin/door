@@ -56,6 +56,30 @@
               </p>
             </div>
 
+            <!-- Replication Start Button (Admin Only) - Small button -->
+            <ion-button
+              (click)="startReplication()"
+              *ngIf="isBothServersDown()"
+              fill="clear"
+              size="small"
+              class="text-yellow-400"
+              [disabled]="isStartingReplication()"
+              title="เริ่มต้นการเชื่อมต่อเซิร์ฟเวอร์"
+            >
+              <ion-icon
+                *ngIf="!isStartingReplication()"
+                slot="icon-only"
+                name="alert-circle-outline"
+                class="text-lg"
+              ></ion-icon>
+              <ion-spinner
+                *ngIf="isStartingReplication()"
+                slot="icon-only"
+                name="crescent"
+                class="text-lg"
+              ></ion-spinner>
+            </ion-button>
+
             <!-- Door Change Button -->
             <ion-button
               (click)="changeDoor()"

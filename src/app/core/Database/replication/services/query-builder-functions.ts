@@ -13,6 +13,11 @@ import {
   PUSH_DEVICE_MONITORING_HISTORY_MUTATION,
   STREAM_DEVICE_MONITORING_HISTORY_SUBSCRIPTION,
 } from '../../collection/device-monitoring-history/query-builder';
+import {
+  PULL_DEVICE_EVENT_QUERY,
+  PUSH_DEVICE_EVENT_MUTATION,
+  STREAM_DEVICE_EVENT_SUBSCRIPTION,
+} from '../../collection/device-event/query-builder';
 import { ReplicationConfigBuilder } from './replication-config-builder';
 import { environment } from 'src/environments/environment';
 
@@ -224,6 +229,73 @@ export function pullStreamDeviceMonitoringHistoryQueryBuilder(
   const httpUrl = url || environment.apiUrl;
   const modifiedQuery = ReplicationConfigBuilder.modifyQueryForServer(
     STREAM_DEVICE_MONITORING_HISTORY_SUBSCRIPTION,
+    httpUrl,
+  );
+  return {
+    query: modifiedQuery,
+    variables: {},
+  };
+}
+
+/**
+ * Device Event Query Builders
+ */
+export function pullDeviceEventQueryBuilder(
+  checkpoint: any,
+  limit: number,
+  url?: string,
+) {
+  const httpUrl = url || environment.apiUrl;
+  const modifiedQuery = ReplicationConfigBuilder.modifyQueryForServer(
+    PULL_DEVICE_EVENT_QUERY,
+    httpUrl,
+  );
+
+  return {
+    query: modifiedQuery,
+    variables: {
+      input: {
+        checkpoint: ReplicationConfigBuilder.buildCheckpointInputForUrl(
+          checkpoint,
+          httpUrl,
+        ),
+        limit: limit || 50,
+      },
+    },
+  };
+}
+
+export function pushDeviceEventQueryBuilder(docs: any[]) {
+  const writeRow = docs.map((docRow) => {
+    const doc = docRow.newDocumentState;
+    return {
+      newDocumentState: {
+        id: doc.id,
+        sent_to: doc.sent_to,
+        transaction_id: doc.transaction_id,
+        device_id: doc.device_id,
+        client_created_at: doc.client_created_at,
+        client_updated_at: doc.client_updated_at,
+        cloud_created_at: doc.cloud_created_at,
+        cloud_updated_at: doc.cloud_updated_at,
+        server_created_at: doc.server_created_at,
+        server_updated_at: doc.server_updated_at,
+        deleted: docRow.assumedMasterState === null,
+      },
+    };
+  });
+  return {
+    query: PUSH_DEVICE_EVENT_MUTATION,
+    variables: {
+      wrireRow: writeRow,
+    },
+  };
+}
+
+export function pullStreamDeviceEventQueryBuilder(headers: any, url?: string) {
+  const httpUrl = url || environment.apiUrl;
+  const modifiedQuery = ReplicationConfigBuilder.modifyQueryForServer(
+    STREAM_DEVICE_EVENT_SUBSCRIPTION,
     httpUrl,
   );
   return {

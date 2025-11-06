@@ -8,6 +8,9 @@ import { DEVICE_MONITORING_HISTORY_SCHEMA } from '../collection/device-monitorin
 import { RxGraphQLReplicationState } from 'rxdb/plugins/replication-graphql';
 import { DEVICE_EVENT_SCHEMA } from '../collection/device-event/schema';
 import { ReplicationManagerService } from '../replication';
+import { DeviceEventFacade } from '../collection/device-event/facade.service';
+import { ReplicationCoordinatorService } from './replication-coordinator.service';
+import { Injector } from '@angular/core';
 
 interface DatabaseCollections {
   transaction: RxCollection;
@@ -25,6 +28,7 @@ export class DatabaseService {
   private db: RxDatabase<DatabaseCollections> | null = null;
   private readonly identity = inject(ClientIdentityService);
   private readonly replicationManager = inject(ReplicationManagerService);
+  private readonly injector = inject(Injector);
   private _initializing = false; // Prevent concurrent initialization
   private _initializationPromise: Promise<void> | null = null; // Track ongoing initialization
 
@@ -150,43 +154,110 @@ export class DatabaseService {
 
       console.log('✅ [NewDatabase] Database and collections initialized');
 
-      // Initialize replications using ReplicationManagerService
-      // Check server availability first
-      const primaryAvailable = await this.checkConnection(environment.apiUrl);
-      let useSecondary = false;
-
-      if (!primaryAvailable) {
-        // Check secondary server availability
-        const secondaryUrl = environment.apiSecondaryUrl || environment.apiUrl;
-        const secondaryAvailable = await this.checkConnection(secondaryUrl);
-
-        if (!secondaryAvailable) {
-          console.error(
-            '❌ [NewDatabase] Both primary and secondary servers are unavailable!',
+      // Initialize replications only if not already initialized
+      // Replications initialization may fail in offline mode, but that's OK
+      // Database will still work in offline mode (offline-first approach)
+      if (this.replicationManager.getAllReplicationStates().size === 0) {
+        try {
+          // Check server availability first
+          const primaryAvailable = await this.checkConnection(
+            environment.apiUrl,
           );
-          throw new Error(
-            'Cannot connect to any GraphQL server. Please check server availability.',
+          let useSecondary = false;
+
+          if (!primaryAvailable) {
+            // Check secondary server availability
+            const secondaryUrl =
+              environment.apiSecondaryUrl || environment.apiUrl;
+            const secondaryAvailable = await this.checkConnection(secondaryUrl);
+
+            if (!secondaryAvailable) {
+              // Both servers are down - don't throw error, just log warning
+              // Database will work in offline mode
+              console.warn(
+                '⚠️ [NewDatabase] Both primary and secondary servers are unavailable!',
+              );
+              console.log(
+                '💡 [NewDatabase] Database is ready for offline operation. Initializing replications with autoStart=false for manual start later.',
+              );
+
+              // Still initialize replications but with autoStart=false
+              // This allows manual start when servers are available
+              const serverId =
+                (await this.identity.getClientId()) || environment.serverId;
+
+              // Use lazy injection to avoid circular dependency
+              const deviceEventFacade = this.injector.get(DeviceEventFacade);
+
+              // Initialize replications with autoStart=false (offline mode)
+              // Pass useSecondary=false, but it will be overridden by checkBothServersDown() in initializeReplications
+              await this.replicationManager.initializeReplications(
+                this.db,
+                false, // useSecondary - doesn't matter, will be overridden by offline check
+                serverId,
+                deviceEventFacade,
+                () => this.emitPrimaryRecoveryEvent(),
+              );
+
+              // Notify coordinator that replications are stopped
+              // Use lazy injection to avoid circular dependency
+              try {
+                const coordinator = this.injector.get(
+                  ReplicationCoordinatorService,
+                );
+                // Update coordinator state to stopped
+                await coordinator.handleBothServersDown();
+              } catch (coordError: any) {
+                // If coordinator is not available, just log warning
+                console.warn(
+                  '⚠️ [NewDatabase] Could not notify coordinator of offline state:',
+                  coordError.message,
+                );
+              }
+
+              // App can still work offline, replications are initialized but not started
+              return;
+            }
+
+            useSecondary = true;
+            // Set global flag for other services to use
+            (window as any).__USE_SECONDARY_SERVER__ = true;
+          } else {
+            // Primary is available, clear the flag
+            (window as any).__USE_SECONDARY_SERVER__ = false;
+          }
+
+          const serverId =
+            (await this.identity.getClientId()) || environment.serverId;
+
+          // Initialize replications using ReplicationManagerService
+          // Use lazy injection to avoid circular dependency
+          const deviceEventFacade = this.injector.get(DeviceEventFacade);
+          await this.replicationManager.initializeReplications(
+            this.db,
+            useSecondary,
+            serverId,
+            deviceEventFacade,
+            () => this.emitPrimaryRecoveryEvent(),
           );
+        } catch (replicationError: any) {
+          // Don't fail database initialization if replications fail
+          // This allows offline-first operation
+          console.warn(
+            '⚠️ [NewDatabase] Replication initialization failed (may be offline):',
+            replicationError.message,
+          );
+          console.log(
+            '💡 [NewDatabase] Database is ready for offline operation. Replications will be initialized when connection is restored.',
+          );
+          // Database is still initialized and functional, just replications are not active
+          // This is acceptable for offline-first operation
         }
-
-        useSecondary = true;
-        // Set global flag for other services to use
-        (window as any).__USE_SECONDARY_SERVER__ = true;
       } else {
-        // Primary is available, clear the flag
-        (window as any).__USE_SECONDARY_SERVER__ = false;
+        console.log(
+          `✅ [NewDatabase] Replications already initialized (${this.replicationManager.getAllReplicationStates().size} states)`,
+        );
       }
-
-      const serverId =
-        (await this.identity.getClientId()) || environment.serverId;
-
-      // Initialize replications using ReplicationManagerService
-      await this.replicationManager.initializeReplications(
-        this.db,
-        useSecondary,
-        serverId,
-        () => this.emitPrimaryRecoveryEvent(),
-      );
     } catch (error: any) {
       console.error(
         '❌ [NewDatabase] Error during database initialization:',
@@ -303,6 +374,7 @@ export class DatabaseService {
    * Reinitialize replications (public method for reconnecting after offline)
    * Checks server availability and starts appropriate replications
    * Delegates to ReplicationManagerService
+   * Handles both servers down gracefully (no throw, offline-first behavior)
    */
   async reinitializeReplications(): Promise<void> {
     if (!this.db) {
@@ -312,12 +384,25 @@ export class DatabaseService {
     const serverId =
       (await this.identity.getClientId()) || environment.serverId;
 
-    return this.replicationManager.reinitializeReplications(
-      this.db,
-      (url: string) => this.checkConnection(url),
-      serverId,
-      () => this.emitPrimaryRecoveryEvent(),
-    );
+    // Use lazy injection to avoid circular dependency
+    const deviceEventFacade = this.injector.get(DeviceEventFacade);
+    try {
+      return await this.replicationManager.reinitializeReplications(
+        this.db,
+        (url: string) => this.checkConnection(url),
+        serverId,
+        deviceEventFacade,
+        () => this.emitPrimaryRecoveryEvent(),
+      );
+    } catch (error: any) {
+      // If both servers are down, reinitializeReplications now handles it gracefully
+      // But we still catch any unexpected errors and log them
+      console.warn(
+        '⚠️ [DatabaseService] Error during reinitializeReplications:',
+        error.message,
+      );
+      // Don't throw - offline-first behavior
+    }
   }
 
   /**

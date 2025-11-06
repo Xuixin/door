@@ -1,7 +1,7 @@
 import { Injectable, NgZone, inject } from '@angular/core';
 import { BehaviorSubject, Subscription } from 'rxjs';
 import { environment } from 'src/environments/environment';
-import { DatabaseService } from './database.service';
+import { ReplicationCoordinatorService } from './replication-coordinator.service';
 
 @Injectable({
   providedIn: 'root',
@@ -12,7 +12,7 @@ export class ServerHealthService {
   private readonly PRIMARY_WS_URL = environment.wsUrl;
   private readonly SECONDARY_WS_URL =
     environment.wsSecondaryUrl || environment.wsUrl;
-  private readonly databaseService = inject(DatabaseService);
+  private readonly coordinator = inject(ReplicationCoordinatorService);
   private isUsingSecondary = false;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
@@ -92,30 +92,18 @@ export class ServerHealthService {
           this.zone.run(async () => {
             this.isOnline$.next(true);
 
-            // If we're using secondary but just connected to primary, switch back
+            // If we're using secondary but just connected to primary, notify coordinator
             if (
               this.isUsingSecondary &&
               this.currentWsUrl &&
               this.currentWsUrl === this.PRIMARY_WS_URL
             ) {
               console.log(
-                '🔄 [ServerHealth] Primary server recovered, switching replications back to primary...',
+                '🔄 [ServerHealth] Primary server recovered, notifying coordinator...',
               );
-              try {
-                if (this.databaseService.isInitialized()) {
-                  await this.databaseService.switchToPrimary();
-                }
-                // Update flag BEFORE logging to prevent race conditions
-                this.isUsingSecondary = false;
-                console.log(
-                  '✅ [ServerHealth] Switched back to primary replications',
-                );
-              } catch (error: any) {
-                console.error(
-                  '❌ [ServerHealth] Error switching to primary:',
-                  error.message,
-                );
-              }
+              // Update flag BEFORE notifying coordinator to prevent race conditions
+              this.isUsingSecondary = false;
+              await this.coordinator.handlePrimaryRecovery();
             }
           });
         }
@@ -136,20 +124,18 @@ export class ServerHealthService {
         );
         this.isOnline$.next(false);
 
-        // If primary server disconnected, switch to secondary
+        // If primary server disconnected, notify coordinator
         if (!this.isUsingSecondary) {
           console.log(
-            '🔄 [ServerHealth] Primary server disconnected, switching to secondary...',
+            '🔄 [ServerHealth] Primary server disconnected, notifying coordinator...',
           );
           this.handlePrimaryDisconnect();
         } else {
-          // If secondary also disconnected, try to reconnect to primary first
+          // If secondary also disconnected, notify coordinator
           console.warn(
-            '⚠️ [ServerHealth] Secondary server also disconnected, attempting to reconnect to primary...',
+            '⚠️ [ServerHealth] Secondary server also disconnected, notifying coordinator...',
           );
-          // Try primary first when secondary also fails
-          this.isUsingSecondary = false;
-          this.scheduleReconnect();
+          this.handleSecondaryDisconnect();
         }
       });
     };
@@ -164,24 +150,41 @@ export class ServerHealthService {
   }
 
   /**
-   * Handle primary server disconnect - switch to secondary
+   * Handle primary server disconnect - delegate to coordinator
    */
   private async handlePrimaryDisconnect(): Promise<void> {
     try {
+      // Check if replications are stopped before proceeding
+      if (this.coordinator.isReplicationsStopped()) {
+        console.log(
+          '⏭️ [ServerHealth] Replications are stopped, skipping primary disconnect handling',
+        );
+        return;
+      }
+
       // Add a small delay to avoid race condition with primary recovery detection
       // This prevents switching back to secondary immediately after primary recovery
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Double-check we're still using primary (might have been switched by recovery)
-      if (!this.isUsingSecondary && this.databaseService.isInitialized()) {
+      // Double-check replications are still not stopped after delay
+      if (this.coordinator.isReplicationsStopped()) {
         console.log(
-          '🔄 [ServerHealth] Switching database replications to secondary...',
+          '⏭️ [ServerHealth] Replications stopped during delay, skipping reconnect',
         );
-        await this.databaseService.switchToSecondary();
+        return;
       }
 
       // Update flag to use secondary
       this.isUsingSecondary = true;
+
+      // Notify coordinator
+      await this.coordinator.handlePrimaryServerDown();
+
+      // Check if replications are now stopped (both servers down)
+      if (this.coordinator.isReplicationsStopped()) {
+        console.log('⏭️ [ServerHealth] Both servers down, stopping monitoring');
+        return;
+      }
 
       // Try to connect to secondary server
       setTimeout(() => {
@@ -189,11 +192,47 @@ export class ServerHealthService {
       }, 1000); // Wait 1 second before reconnecting
     } catch (error: any) {
       console.error(
-        '❌ [ServerHealth] Error switching to secondary:',
+        '❌ [ServerHealth] Error handling primary disconnect:',
         error.message,
       );
-      // Still try to reconnect
+      // Only try to reconnect if replications are not stopped
+      if (!this.coordinator.isReplicationsStopped()) {
+        this.scheduleReconnect();
+      }
+    }
+  }
+
+  /**
+   * Handle secondary server disconnect - delegate to coordinator
+   */
+  private async handleSecondaryDisconnect(): Promise<void> {
+    try {
+      // Notify coordinator
+      await this.coordinator.handleSecondaryServerDown();
+
+      // Check if both servers are down (replications stopped)
+      if (this.coordinator.isReplicationsStopped()) {
+        console.log(
+          '⏭️ [ServerHealth] Both servers down, stopping monitoring and canceling reconnect',
+        );
+        // Cancel any pending reconnect timers
+        this.reconnectTimer?.unsubscribe();
+        this.reconnectTimer = null;
+        return;
+      }
+
+      // Try to reconnect to primary first when secondary also fails
+      this.isUsingSecondary = false;
       this.scheduleReconnect();
+    } catch (error: any) {
+      console.error(
+        '❌ [ServerHealth] Error handling secondary disconnect:',
+        error.message,
+      );
+      // Only try to reconnect if replications are not stopped
+      if (!this.coordinator.isReplicationsStopped()) {
+        this.scheduleReconnect();
+      }
     }
   }
 
@@ -201,6 +240,14 @@ export class ServerHealthService {
    * Schedule reconnection attempt
    */
   private scheduleReconnect(): void {
+    // Check if replications are stopped before attempting reconnect
+    if (this.coordinator.isReplicationsStopped()) {
+      console.log(
+        '⏭️ [ServerHealth] Replications are stopped, skipping reconnect',
+      );
+      return;
+    }
+
     if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
       console.error(
         `❌ [ServerHealth] Max reconnect attempts (${this.MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`,
@@ -267,5 +314,42 @@ export class ServerHealthService {
     this.isOnline$.next(false);
     this.isUsingSecondary = false;
     this.reconnectAttempts = 0;
+  }
+
+  /**
+   * Start monitoring after manual start
+   * Checks current replication state and connects to appropriate server
+   */
+  public startMonitoring(): void {
+    console.log('🔄 [ServerHealth] Starting monitoring...');
+
+    // Check current replication state from coordinator
+    const currentState = this.coordinator.getCurrentState();
+
+    if (currentState === 'stopped') {
+      console.log(
+        '⏭️ [ServerHealth] Replications are stopped, not starting monitoring',
+      );
+      return;
+    }
+
+    // Update isUsingSecondary flag based on current state
+    if (currentState === 'primary') {
+      this.isUsingSecondary = false;
+      console.log('✅ [ServerHealth] Monitoring primary server');
+    } else if (currentState === 'secondary') {
+      this.isUsingSecondary = true;
+      console.log('✅ [ServerHealth] Monitoring secondary server');
+    }
+
+    // Reset reconnect attempts
+    this.reconnectAttempts = 0;
+
+    // Cancel any existing reconnect timers
+    this.reconnectTimer?.unsubscribe();
+    this.reconnectTimer = null;
+
+    // Connect to appropriate server
+    this.connect();
   }
 }

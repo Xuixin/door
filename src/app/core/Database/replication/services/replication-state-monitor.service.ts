@@ -373,10 +373,10 @@ export class ReplicationStateMonitorService {
     lines.push('📊 Replication State Summary');
     lines.push('='.repeat(50));
     lines.push(`Current Server: ${state.currentServer.toUpperCase()}`);
-    lines.push(`Total Active: ${state.totalActive}/6`);
-    lines.push(`Total Connected: ${state.totalConnected}/6`);
-    lines.push(`Primary Active: ${state.primaryActive}/3`);
-    lines.push(`Secondary Active: ${state.secondaryActive}/3`);
+    lines.push(`Total Active: ${state.totalActive}/8`);
+    lines.push(`Total Connected: ${state.totalConnected}/8`);
+    lines.push(`Primary Active: ${state.primaryActive}/4`);
+    lines.push(`Secondary Active: ${state.secondaryActive}/4`);
     lines.push('');
 
     lines.push('Individual Replications:');

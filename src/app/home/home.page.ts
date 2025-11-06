@@ -9,6 +9,7 @@ import {
   ElementRef,
   computed,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ModalController,
   LoadingController,
@@ -16,6 +17,8 @@ import {
 } from '@ionic/angular';
 import { TransactionService } from './../core/Database/collection/txn';
 import { DatabaseService } from '../core/Database/services/database.service';
+import { ReplicationCoordinatorService } from '../core/Database/services/replication-coordinator.service';
+import { ServerHealthService } from '../core/Database/services/server-health.service';
 import { DeviceSelectionModalComponent } from '../components/device-selection-modal/device-selection-modal.component';
 import { ClientIdentityService } from '../services/client-identity.service';
 
@@ -40,6 +43,8 @@ export class HomePage implements OnInit, OnDestroy {
   // Inject services
   private readonly transactionService = inject(TransactionService);
   private readonly databaseService = inject(DatabaseService);
+  private readonly coordinator = inject(ReplicationCoordinatorService);
+  private readonly serverHealth = inject(ServerHealthService);
   private readonly identityService = inject(ClientIdentityService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly modalController = inject(ModalController);
@@ -60,6 +65,22 @@ export class HomePage implements OnInit, OnDestroy {
   public isChecking = false;
   public accessResult = signal<AccessResult | null>(null);
   public currentDoorName = signal<string>('');
+
+  // Replication management signals
+  public isStartingReplication = signal(false);
+
+  // Use toSignal to convert Observable to Signal for reactive updates
+  private readonly replicationsStoppedSignal = toSignal(
+    this.coordinator.replicationsStopped$,
+    { initialValue: false },
+  );
+
+  // Computed signal: show button when replications are stopped AND state is stopped
+  public readonly isBothServersDown = computed(() => {
+    const stopped = this.replicationsStoppedSignal();
+    const state = this.coordinator.getCurrentState();
+    return stopped && state === 'stopped';
+  });
 
   private timeInterval?: any;
   private resultTimeout?: any;
@@ -353,5 +374,46 @@ export class HomePage implements OnInit, OnDestroy {
       clearTimeout(this.resultTimeout);
     }
     this.resetForm();
+  }
+
+  /**
+   * Start replication manually
+   */
+  async startReplication(): Promise<void> {
+    if (this.isStartingReplication()) {
+      return;
+    }
+
+    this.isStartingReplication.set(true);
+    try {
+      const result = await this.coordinator.handleManualStart();
+
+      if (result.success) {
+        console.log(
+          `✅ [HomePage] Successfully started replications on ${result.server} server`,
+        );
+        // Start ServerHealth monitoring after successful manual start
+        this.serverHealth.startMonitoring();
+      } else {
+        // Show alert if both servers are still unavailable
+        const alert = await this.alertController.create({
+          header: 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์',
+          message:
+            result.message || 'เซิร์ฟเวอร์ยังไม่พร้อม กรุณาลองใหม่อีกครั้ง',
+          buttons: ['ตกลง'],
+        });
+        await alert.present();
+      }
+    } catch (error: any) {
+      console.error('❌ [HomePage] Error starting replication:', error);
+      const alert = await this.alertController.create({
+        header: 'เกิดข้อผิดพลาด',
+        message: 'ไม่สามารถเริ่มต้นการเชื่อมต่อได้ กรุณาลองใหม่อีกครั้ง',
+        buttons: ['ตกลง'],
+      });
+      await alert.present();
+    } finally {
+      this.isStartingReplication.set(false);
+    }
   }
 }

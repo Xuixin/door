@@ -10,18 +10,22 @@ export const REPLICATION_IDENTIFIERS = [
   'device_monitoring-secondary-3001',
   'device_monitoring_history-primary-10102',
   'device_monitoring_history-secondary-3001',
+  'device_event-primary-10102',
+  'device_event-secondary-3001',
 ] as const;
 
 export const PRIMARY_IDENTIFIERS = [
   'txn-primary-10102',
   'device_monitoring-primary-10102',
   'device_monitoring_history-primary-10102',
+  'device_event-primary-10102',
 ] as const;
 
 export const SECONDARY_IDENTIFIERS = [
   'txn-secondary-3001',
   'device_monitoring-secondary-3001',
   'device_monitoring_history-secondary-3001',
+  'device_event-secondary-3001',
 ] as const;
 
 /**
@@ -43,6 +47,10 @@ export const COLLECTION_IDENTIFIER_MAP: Record<
     primary: 'device_monitoring_history-primary-10102',
     secondary: 'device_monitoring_history-secondary-3001',
   },
+  device_event: {
+    primary: 'device_event-primary-10102',
+    secondary: 'device_event-secondary-3001',
+  },
 };
 
 /**
@@ -55,6 +63,8 @@ export const IDENTIFIER_COLLECTION_MAP: Record<string, string> = {
   'device_monitoring-secondary-3001': 'devicemonitoring',
   'device_monitoring_history-primary-10102': 'devicemonitoringhistory',
   'device_monitoring_history-secondary-3001': 'devicemonitoringhistory',
+  'device_event-primary-10102': 'device_event',
+  'device_event-secondary-3001': 'device_event',
 };
 
 /**
@@ -67,6 +77,8 @@ export const IDENTIFIER_SERVER_MAP: Record<string, 'primary' | 'secondary'> = {
   'device_monitoring-secondary-3001': 'secondary',
   'device_monitoring_history-primary-10102': 'primary',
   'device_monitoring_history-secondary-3001': 'secondary',
+  'device_event-primary-10102': 'primary',
+  'device_event-secondary-3001': 'secondary',
 };
 
 /**
