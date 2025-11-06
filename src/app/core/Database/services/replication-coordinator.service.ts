@@ -106,7 +106,7 @@ export class ReplicationCoordinatorService {
       this._currentState = 'stopped';
       this._replicationsStopped = true;
       this._replicationsStopped$.next(true);
-      
+
       console.log(
         '✅ [ReplicationCoordinator] All replications stopped gracefully',
       );
@@ -146,6 +146,23 @@ export class ReplicationCoordinatorService {
   }
 
   /**
+   * Ensure replications are initialized
+   * If replication states don't exist, reinitialize them
+   */
+  private async ensureReplicationsInitialized(): Promise<void> {
+    const replicationStates = this.replicationManager.getAllReplicationStates();
+    if (replicationStates.size === 0) {
+      console.log(
+        '🔄 [ReplicationCoordinator] Replication states not found, reinitializing...',
+      );
+      await this.databaseService.reinitializeReplications();
+      console.log(
+        '✅ [ReplicationCoordinator] Replications reinitialized successfully',
+      );
+    }
+  }
+
+  /**
    * Handle network online event
    * Check servers and start appropriate replications
    */
@@ -170,12 +187,22 @@ export class ReplicationCoordinatorService {
         '📶 [ReplicationCoordinator] Network online - checking servers and starting replications...',
       );
 
+      // Ensure replications are initialized before attempting to switch/start
+      await this.ensureReplicationsInitialized();
+
       // Check primary server first
       const primaryAvailable = await this.checkServerAvailability(
         environment.apiUrl,
       );
 
       if (primaryAvailable) {
+        // Check if already using primary server
+        if (this._currentState === 'primary') {
+          console.log(
+            '⏭️ [ReplicationCoordinator] Already using primary server, skipping switch',
+          );
+          return;
+        }
         console.log(
           '✅ [ReplicationCoordinator] Primary server available, starting primary replications...',
         );
@@ -190,6 +217,13 @@ export class ReplicationCoordinatorService {
           await this.checkServerAvailability(secondaryUrl);
 
         if (secondaryAvailable) {
+          // Check if already using secondary server
+          if (this._currentState === 'secondary') {
+            console.log(
+              '⏭️ [ReplicationCoordinator] Already using secondary server, skipping switch',
+            );
+            return;
+          }
           console.log(
             '✅ [ReplicationCoordinator] Secondary server available, starting secondary replications...',
           );
@@ -245,6 +279,13 @@ export class ReplicationCoordinatorService {
         await this.checkServerAvailability(secondaryUrl);
 
       if (secondaryAvailable) {
+        // Check if already using secondary server
+        if (this._currentState === 'secondary') {
+          console.log(
+            '⏭️ [ReplicationCoordinator] Already using secondary server, skipping switch',
+          );
+          return;
+        }
         console.log(
           '✅ [ReplicationCoordinator] Secondary server available, switching to secondary...',
         );
@@ -299,6 +340,13 @@ export class ReplicationCoordinatorService {
       );
 
       if (primaryAvailable) {
+        // Check if already using primary server
+        if (this._currentState === 'primary') {
+          console.log(
+            '⏭️ [ReplicationCoordinator] Already using primary server, skipping switch',
+          );
+          return;
+        }
         console.log(
           '✅ [ReplicationCoordinator] Primary server available, switching to primary...',
         );

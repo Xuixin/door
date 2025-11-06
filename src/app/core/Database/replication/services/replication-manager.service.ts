@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { RxDatabase, RxCollection } from 'rxdb';
 import { RxGraphQLReplicationState } from 'rxdb/plugins/replication-graphql';
+import { removeGraphQLWebSocketRef } from 'rxdb/plugins/replication-graphql';
 import { environment } from 'src/environments/environment';
 import {
   setupCollectionReplication,
@@ -39,6 +40,41 @@ export class ReplicationManagerService {
   private notifyReplicationMonitor(): void {
     if (this.replicationMonitorService?.notifyStateChange) {
       this.replicationMonitorService.notifyStateChange();
+    }
+  }
+
+  /**
+   * Close WebSocket connection for a replication
+   * Uses RxDB's removeGraphQLWebSocketRef to properly close WebSocket
+   * @param wsUrl - WebSocket URL to close
+   * @returns Promise that resolves when WebSocket is closed
+   */
+  private async closeReplicationWebSocket(wsUrl: string): Promise<void> {
+    try {
+      // Remove WebSocket reference - this will close the connection if refCount reaches 0
+      // Use queueMicrotask to prevent blocking
+      await new Promise<void>((resolve) => {
+        queueMicrotask(() => {
+          try {
+            removeGraphQLWebSocketRef(wsUrl);
+            console.log(`🔌 [ReplicationManager] Closed WebSocket: ${wsUrl}`);
+            // Wait a bit to ensure WebSocket is closed
+            setTimeout(() => resolve(), 100);
+          } catch (error: any) {
+            // WebSocket might already be closed or not exist
+            console.warn(
+              `⚠️ [ReplicationManager] Error closing WebSocket ${wsUrl}:`,
+              error.message,
+            );
+            resolve(); // Resolve anyway to continue
+          }
+        });
+      });
+    } catch (error: any) {
+      console.warn(
+        `⚠️ [ReplicationManager] Error in closeReplicationWebSocket:`,
+        error.message,
+      );
     }
   }
 
@@ -93,32 +129,68 @@ export class ReplicationManagerService {
     console.log(
       '🛑 [ReplicationManager] Stopping all replications gracefully...',
     );
-    const allStates = Array.from(this.replicationStates.values());
+    const allStates = Array.from(this.replicationStates.entries());
 
-    allStates.forEach((state) => {
-      console.log(state as any);
-    });
-    for (const state of allStates) {
+    for (const [identifier, state] of allStates) {
       try {
+        // Get WebSocket URL from replication state before canceling
+        const wsUrl = (state as any).url?.ws;
+
+        if (wsUrl) {
+          await this.closeReplicationWebSocket(wsUrl);
+        }
+
+        // Check if replication was started
         const wasStarted =
           (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
-        console.log(
-          `🔄 [${state.replicationIdentifier}] Replication was started: AAAAA`,
-          wasStarted,
-        );
+
         if (wasStarted) {
-          await state.internalReplicationState?.downstreamBulkWriteFlag;
+          // Wait a bit to ensure WebSocket is fully closed before canceling
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          try {
+            await state.cancel();
+            // Reset wasStarted flag after canceling
+            (state as any).wasStarted = false;
+            (state as any)._wasStarted = false;
+            console.log(
+              `✅ [ReplicationManager] Cancelled replication: ${identifier}`,
+            );
+          } catch (cancelError: any) {
+            // Handle "RxStorageInstanceDexie is closed" error gracefully
+            if (
+              cancelError?.message?.includes('is closed') ||
+              cancelError?.message?.includes('RxStorageInstance')
+            ) {
+              console.warn(
+                `⚠️ [ReplicationManager] Storage already closed for ${identifier}, skipping cancel`,
+              );
+            } else {
+              // Re-throw other errors to be caught by outer try-catch
+              throw cancelError;
+            }
+          }
         } else {
           console.log(
-            '⏭️ [ReplicationManager] Replication not started, skipping cancel',
+            `⏭️ [ReplicationManager] Replication ${identifier} not started, skipping cancel`,
           );
         }
       } catch (error: any) {
         // Ignore errors if replication is already cancelled or not started
-        console.warn(
-          '⚠️ [ReplicationManager] Error cancelling replication (may already be stopped):',
-          error.message,
-        );
+        // Also ignore "is closed" errors as they're expected when storage is already closed
+        if (
+          error?.message?.includes('is closed') ||
+          error?.message?.includes('RxStorageInstance')
+        ) {
+          console.warn(
+            `⚠️ [ReplicationManager] Storage already closed for replication, skipping`,
+          );
+        } else {
+          console.warn(
+            '⚠️ [ReplicationManager] Error cancelling replication (may already be stopped):',
+            error.message,
+          );
+        }
       }
     }
 
@@ -195,6 +267,12 @@ export class ReplicationManagerService {
         }
 
         const replicationState = setupCollectionReplication(config);
+
+        // Track wasStarted flag based on autoStart
+        // If autoStart is true, replication will start automatically, so mark as started
+        (replicationState as any).wasStarted = false; // Will be set to true when actually started
+        (replicationState as any)._wasStarted = false;
+
         this.replicationStates.set(
           config.replicationIdentifier,
           replicationState,
@@ -204,8 +282,19 @@ export class ReplicationManagerService {
         const initialActive =
           (replicationState as any).active$?.getValue?.() ?? false;
         console.log(
-          `✅ [ReplicationManager] Replication initialized: ${config.name} (active: ${initialActive})`,
+          `✅ [ReplicationManager] Replication initialized: ${config.name} (active: ${initialActive}, autoStart: ${config.autoStart})`,
         );
+
+        // If autoStart is true, track when replication actually starts
+        if (config.autoStart) {
+          // Subscribe to active$ to track when replication starts
+          replicationState.active$.subscribe((active) => {
+            if (active && !(replicationState as any).wasStarted) {
+              (replicationState as any).wasStarted = true;
+              (replicationState as any)._wasStarted = true;
+            }
+          });
+        }
       } catch (error) {
         console.error(
           `❌ [ReplicationManager] Failed to initialize replication: ${config.name}`,
@@ -241,6 +330,17 @@ export class ReplicationManagerService {
       const state = this.replicationStates.get(identifier);
       if (state) {
         try {
+          // Check if replication was already started
+          const wasStarted =
+            (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
+
+          if (wasStarted) {
+            console.log(
+              `⏭️ [ReplicationManager] Secondary replication ${identifier} already started, skipping`,
+            );
+            continue;
+          }
+
           // Check if replication is already active
           const isActive = (state as any).active$?.getValue?.() ?? false;
 
@@ -248,19 +348,27 @@ export class ReplicationManagerService {
             // If not active, start it first
             if (typeof (state as any).start === 'function') {
               await (state as any).start();
+              // Track wasStarted flag
+              (state as any).wasStarted = true;
+              (state as any)._wasStarted = true;
               console.log(
                 `✅ [ReplicationManager] Started secondary: ${identifier}`,
               );
             } else {
               // Fallback: use reSync if start() is not available
               state.reSync();
+              // Track wasStarted flag
+              (state as any).wasStarted = true;
+              (state as any)._wasStarted = true;
               console.log(
                 `✅ [ReplicationManager] Re-synced secondary: ${identifier}`,
               );
             }
           } else {
-            // Already active, just re-sync
+            // Already active, just re-sync and track wasStarted
             state.reSync();
+            (state as any).wasStarted = true;
+            (state as any)._wasStarted = true;
             console.log(
               `✅ [ReplicationManager] Re-synced active secondary: ${identifier}`,
             );
@@ -289,9 +397,30 @@ export class ReplicationManagerService {
     for (const identifier of PRIMARY_IDENTIFIERS) {
       const state = this.replicationStates.get(identifier);
       if (state) {
-        // Re-sync to start replication
-        state.reSync();
-        console.log(`✅ [ReplicationManager] Started primary: ${identifier}`);
+        try {
+          // Check if replication was already started
+          const wasStarted =
+            (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
+
+          if (wasStarted) {
+            console.log(
+              `⏭️ [ReplicationManager] Primary replication ${identifier} already started, skipping`,
+            );
+            continue;
+          }
+
+          // Re-sync to start replication
+          state.reSync();
+          // Track wasStarted flag
+          (state as any).wasStarted = true;
+          (state as any)._wasStarted = true;
+          console.log(`✅ [ReplicationManager] Started primary: ${identifier}`);
+        } catch (error: any) {
+          console.error(
+            `❌ [ReplicationManager] Error starting primary ${identifier}:`,
+            error.message,
+          );
+        }
       } else {
         console.warn(
           `⚠️ [ReplicationManager] Primary replication not found: ${identifier}`,
@@ -301,10 +430,62 @@ export class ReplicationManagerService {
   }
 
   /**
+   * Check if secondary replications are already active
+   */
+  private areSecondaryReplicationsActive(): boolean {
+    for (const identifier of SECONDARY_IDENTIFIERS) {
+      const state = this.replicationStates.get(identifier);
+      if (state) {
+        const wasStarted =
+          (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
+        const isActive = (state as any).active$?.getValue?.() ?? false;
+        if (wasStarted || isActive) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Check if primary replications are already active
+   */
+  private arePrimaryReplicationsActive(): boolean {
+    for (const identifier of PRIMARY_IDENTIFIERS) {
+      const state = this.replicationStates.get(identifier);
+      if (state) {
+        const wasStarted =
+          (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
+        const isActive = (state as any).active$?.getValue?.() ?? false;
+        if (wasStarted || isActive) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Switch all replications from primary to secondary
    * Use this when server goes down at runtime (after initial startup)
    */
   async switchToSecondary(): Promise<void> {
+    // Check if replication states exist
+    if (this.replicationStates.size === 0) {
+      console.warn(
+        '⚠️ [ReplicationManager] No replication states found, cannot switch to secondary. Reinitialization required.',
+      );
+      return;
+    }
+
+    // Check if secondary replications are already active
+    if (this.areSecondaryReplicationsActive()) {
+      console.log(
+        '⏭️ [ReplicationManager] Secondary replications already active, skipping switch',
+      );
+      return;
+    }
+
     console.log(
       '🔄 [ReplicationManager] Switching to secondary replications...',
     );
@@ -327,6 +508,22 @@ export class ReplicationManagerService {
    * Use this when primary server recovers at runtime
    */
   async switchToPrimary(): Promise<void> {
+    // Check if replication states exist
+    if (this.replicationStates.size === 0) {
+      console.warn(
+        '⚠️ [ReplicationManager] No replication states found, cannot switch to primary. Reinitialization required.',
+      );
+      return;
+    }
+
+    // Check if primary replications are already active
+    if (this.arePrimaryReplicationsActive()) {
+      console.log(
+        '⏭️ [ReplicationManager] Primary replications already active, skipping switch',
+      );
+      return;
+    }
+
     console.log('🔄 [ReplicationManager] Switching to primary replications...');
 
     // Cancel all secondary replications (only if they are active)
@@ -350,14 +547,41 @@ export class ReplicationManagerService {
       const state = this.replicationStates.get(identifier);
       if (state) {
         try {
-          // Check if replication was started before canceling
+          // Get WebSocket URL from replication state before canceling
+          const wsUrl = (state as any).url?.ws;
+
+          if (wsUrl) {
+            await this.closeReplicationWebSocket(wsUrl);
+          }
+
+          // Check if replication was started
           const wasStarted =
             (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
           if (wasStarted) {
-            await state.cancel();
-            console.log(
-              `🛑 [ReplicationManager] Cancelled secondary: ${identifier}`,
-            );
+            // Wait a bit to ensure WebSocket is fully closed before canceling
+            await new Promise((resolve) => setTimeout(resolve, 200));
+
+            try {
+              await state.cancel();
+              // Reset wasStarted flag after canceling
+              (state as any).wasStarted = false;
+              (state as any)._wasStarted = false;
+              console.log(
+                `🛑 [ReplicationManager] Cancelled secondary: ${identifier}`,
+              );
+            } catch (cancelError: any) {
+              // Handle "RxStorageInstanceDexie is closed" error gracefully
+              if (
+                cancelError?.message?.includes('is closed') ||
+                cancelError?.message?.includes('RxStorageInstance')
+              ) {
+                console.warn(
+                  `⚠️ [ReplicationManager] Storage already closed for ${identifier}, skipping cancel`,
+                );
+              } else {
+                throw cancelError; // Re-throw other errors
+              }
+            }
           } else {
             console.log(
               `⏭️ [ReplicationManager] Secondary replication not started, skipping cancel: ${identifier}`,
@@ -385,10 +609,47 @@ export class ReplicationManagerService {
       const state = this.replicationStates.get(identifier);
       if (state) {
         try {
-          await state.cancel();
-          console.log(
-            `🛑 [ReplicationManager] Cancelled primary: ${identifier}`,
-          );
+          // Get WebSocket URL from replication state before canceling
+          const wsUrl = (state as any).url?.ws;
+
+          if (wsUrl) {
+            await this.closeReplicationWebSocket(wsUrl);
+          }
+
+          // Check if replication was started
+          const wasStarted =
+            (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
+
+          if (wasStarted) {
+            // Wait a bit to ensure WebSocket is fully closed before canceling
+            await new Promise((resolve) => setTimeout(resolve, 200));
+
+            try {
+              await state.cancel();
+              // Reset wasStarted flag after canceling
+              (state as any).wasStarted = false;
+              (state as any)._wasStarted = false;
+              console.log(
+                `🛑 [ReplicationManager] Cancelled primary: ${identifier}`,
+              );
+            } catch (cancelError: any) {
+              // Handle "RxStorageInstanceDexie is closed" error gracefully
+              if (
+                cancelError?.message?.includes('is closed') ||
+                cancelError?.message?.includes('RxStorageInstance')
+              ) {
+                console.warn(
+                  `⚠️ [ReplicationManager] Storage already closed for ${identifier}, skipping cancel`,
+                );
+              } else {
+                throw cancelError; // Re-throw other errors
+              }
+            }
+          } else {
+            console.log(
+              `⏭️ [ReplicationManager] Primary replication not started, skipping cancel: ${identifier}`,
+            );
+          }
         } catch (error: any) {
           console.warn(
             `⚠️ [ReplicationManager] Error cancelling primary ${identifier}:`,
@@ -426,18 +687,46 @@ export class ReplicationManagerService {
    */
   async stopReplication(): Promise<void> {
     console.log('🛑 [ReplicationManager] Stopping all replications...');
-    const allStates = Array.from(this.replicationStates.values());
+    const allStates = Array.from(this.replicationStates.entries());
 
     // Cancel all replications - don't check active$ state
     // active$ only shows if pull/push operations are currently running
     // Replication may be waiting for next cycle even if active$ is false
-    for (const state of allStates) {
+    for (const [identifier, state] of allStates) {
       try {
-        // Check if replication was started before canceling
+        // Get WebSocket URL from replication state before canceling
+        const wsUrl = (state as any).url?.ws;
+
+        if (wsUrl) {
+          await this.closeReplicationWebSocket(wsUrl);
+        }
+
+        // Check if replication was started
         const wasStarted =
           (state as any).wasStarted ?? (state as any)._wasStarted ?? false;
         if (wasStarted) {
-          await state.cancel();
+          // Wait a bit to ensure WebSocket is fully closed before canceling
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          try {
+            await state.cancel();
+            console.log(
+              `✅ [ReplicationManager] Cancelled replication: ${identifier}`,
+            );
+          } catch (cancelError: any) {
+            // Handle "RxStorageInstanceDexie is closed" error gracefully
+            if (
+              cancelError?.message?.includes('is closed') ||
+              cancelError?.message?.includes('RxStorageInstance')
+            ) {
+              console.warn(
+                `⚠️ [ReplicationManager] Storage already closed for ${identifier}, skipping cancel`,
+              );
+            } else {
+              // Re-throw other errors to be caught by outer try-catch
+              throw cancelError;
+            }
+          }
         } else {
           console.log(
             '⏭️ [ReplicationManager] Replication not started, skipping cancel',
@@ -445,10 +734,20 @@ export class ReplicationManagerService {
         }
       } catch (error: any) {
         // Ignore errors if replication is already cancelled or not started
-        console.warn(
-          '⚠️ [ReplicationManager] Error cancelling replication (may already be stopped):',
-          error.message,
-        );
+        // Also ignore "is closed" errors as they're expected when storage is already closed
+        if (
+          error?.message?.includes('is closed') ||
+          error?.message?.includes('RxStorageInstance')
+        ) {
+          console.warn(
+            `⚠️ [ReplicationManager] Storage already closed for replication, skipping`,
+          );
+        } else {
+          console.warn(
+            '⚠️ [ReplicationManager] Error cancelling replication (may already be stopped):',
+            error.message,
+          );
+        }
       }
     }
 
@@ -488,14 +787,18 @@ export class ReplicationManagerService {
         console.warn(
           '⚠️ [ReplicationManager] Both primary and secondary servers are unavailable!',
         );
-        // Stop all replications gracefully instead of throwing error (offline-first behavior)
-        await this.stopAllReplicationsGracefully();
-        return;
+        console.log(
+          '💡 [ReplicationManager] Initializing replications with autoStart=false for offline operation...',
+        );
+        // Still initialize replications but with autoStart=false (offline-first behavior)
+        // This allows manual start when servers are available
+        useSecondary = false; // Doesn't matter, will be overridden by checkBothServersDown()
+        // Continue to initialize replications with autoStart=false
+      } else {
+        useSecondary = true;
+        // Set global flag for other services to use
+        (window as any).__USE_SECONDARY_SERVER__ = true;
       }
-
-      useSecondary = true;
-      // Set global flag for other services to use
-      (window as any).__USE_SECONDARY_SERVER__ = true;
     } else {
       // Primary is available, clear the flag
       (window as any).__USE_SECONDARY_SERVER__ = false;

@@ -103,9 +103,6 @@ export function setupCollectionReplication<T = any>(
     console.error(`[${config.name} Replication Error]`, err);
   });
 
-  replication.active$.subscribe((active) => {
-    console.log(`[${config.name} Replication Active]`, active);
-  });
 
   replication.received$.subscribe(async (doc) => {
     console.log(`[${config.name} Document Received]`, doc);

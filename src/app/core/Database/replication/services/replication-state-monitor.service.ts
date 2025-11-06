@@ -42,7 +42,7 @@ export interface ReplicationStateInfo {
   lastConnectedTime?: number;
 }
 
-// Track WebSocket connection status per replication
+
 const connectionStatusMap = new Map<string, BehaviorSubject<boolean>>();
 
 // Track wasStarted state per replication (event-based)

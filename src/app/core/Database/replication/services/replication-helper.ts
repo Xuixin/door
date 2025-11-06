@@ -1,5 +1,6 @@
 import { replicateGraphQL } from 'rxdb/plugins/replication-graphql';
 import { RxGraphQLReplicationState } from 'rxdb/plugins/replication-graphql';
+import { removeGraphQLWebSocketRef } from 'rxdb/plugins/replication-graphql';
 import { RxCollection } from 'rxdb';
 import { ReplicationConfigBuilder } from './replication-config-builder';
 import { ClientIdentityService } from '../../../../services/client-identity.service';
@@ -85,46 +86,102 @@ export function setupCollectionReplication<T = any>(
                   config.urls.http,
                 );
               }
-            : undefined, // Disable stream if no pullStreamQueryBuilder provided
+            : undefined,
           responseModifier: responseModifier,
           includeWsHeaders: true,
           wsOptions: {
+            disablePong: false,
             retryAttempts: 3,
             connectionParams: () => ({
               id: config.serverId,
             }),
-            
+            on: {
+              closed: (event) => {
+                // Use queueMicrotask to prevent blocking WebSocket event handlers
+                queueMicrotask(() => {
+                  console.log(`[${config.name} WebSocket Closed]`, event);
+                });
+              },
+              error: (event: any) => {
+                // Use queueMicrotask to prevent blocking WebSocket event handlers
+                queueMicrotask(() => {
+                  console.log(`[${config.name} WebSocket Error]`, event);
+                  if (event.code === 1006) {
+                    console.log(
+                      `[${config.name} WebSocket Closed (code 1006)]`,
+                    );
+                  }
+                });
+              },
+              ping: (event) => {
+                console.log(`[${config.name} WebSocket Ping]`, event);
+              },
+            },
           },
         }
-      : undefined, // Disable pull if no pullQueryBuilder provided
+      : undefined,
     push: config.pushQueryBuilder
       ? {
           queryBuilder: config.pushQueryBuilder,
           batchSize: 50,
           modifier: (doc: any) => doc,
         }
-      : undefined, // Disable push if no pushQueryBuilder provided
+      : undefined,
 
     deletedField: 'deleted',
     live: true,
     retryTime: 1000 * 5,
     waitForLeadership: true,
-    autoStart: config.autoStart !== false, // Default to true, but can be overridden
+    autoStart: config.autoStart !== false,
   });
 
-  // Setup observables for logging and callbacks
-  replication.error$.subscribe((err) => {
+  replication.error$.subscribe((err: any) => {
+    // Handle push errors gracefully when offline (RC_PUSH)
+    // These are expected when network is unavailable (offline-first behavior)
+    if (err?.code === 'RC_PUSH' || err?.parameters?.errors) {
+      // Check if it's a network/offline error
+      const errorMessage =
+        err?.parameters?.errors?.message || err?.message || '';
+      const isNetworkError =
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('NetworkError') ||
+        errorMessage.includes('offline') ||
+        errorMessage.includes('Network request failed');
+
+      if (isNetworkError) {
+        // Log as warning instead of error - this is expected when offline
+        console.warn(
+          `⚠️ [${config.name} Replication] Push failed (offline):`,
+          errorMessage,
+        );
+        return; // Don't log as error
+      }
+    }
+
+    // Filter out expected "RxStorageInstanceDexie is closed" errors
+    // These occur during RxDB internal cleanup after replication cancellation
+    const errorMessage = err?.message || err?.toString() || '';
+    const errorStack = err?.stack || '';
+    if (
+      errorMessage.includes('RxStorageInstanceDexie is closed') ||
+      errorMessage.includes('RxStorageInstance') ||
+      errorStack.includes('RxStorageInstanceDexie') ||
+      errorStack.includes('ensureNotClosed')
+    ) {
+      // This is an expected error during cleanup - don't log as error
+      console.debug(
+        `🔇 [${config.name} Replication] Suppressed expected storage closed error during cleanup`,
+      );
+      return; // Don't log as error
+    }
+
+    // Log other errors normally
     console.error(`[${config.name} Replication Error]`, err);
-  });
-
-  replication.active$.subscribe((active) => {
-    console.log(`[${config.name} Replication Active]`, active);
   });
 
   replication.received$.subscribe(async (doc) => {
     console.log(`[${config.name} Document Received]`, doc);
 
-    // Call onReceived callback if provided
     if (config.onReceived) {
       const docs = Array.isArray(doc) ? doc : [doc];
       await config.onReceived(docs);

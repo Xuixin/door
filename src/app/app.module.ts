@@ -5,6 +5,7 @@ import {
   CUSTOM_ELEMENTS_SCHEMA,
   ErrorHandler,
 } from '@angular/core';
+import { RxDBErrorHandler } from './core/error-handler/rxdb-error-handler.service';
 import { ModalController } from '@ionic/angular';
 import { BrowserModule } from '@angular/platform-browser';
 import { RouteReuseStrategy } from '@angular/router';
@@ -172,6 +173,11 @@ addIcons({
     },
     DatabaseService,
     WorkflowPreloadService,
+    // * Custom Error Handler to filter RxDB cleanup errors
+    {
+      provide: ErrorHandler,
+      useClass: RxDBErrorHandler,
+    },
     // * HTTP interceptors
     {
       provide: HTTP_INTERCEPTORS,

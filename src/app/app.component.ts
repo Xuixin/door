@@ -29,6 +29,57 @@ export class AppComponent implements OnInit, OnDestroy {
       console.log('📢 [AppComponent] Primary recovery event received');
       await this.coordinator.handlePrimaryRecovery();
     });
+
+    // Setup global error handler to filter RxDB cleanup errors
+    this.setupGlobalErrorHandling();
+  }
+
+  /**
+   * Setup global error handling to filter expected RxDB cleanup errors
+   */
+  private setupGlobalErrorHandling(): void {
+    // Handle unhandled promise rejections
+    window.addEventListener('unhandledrejection', (event) => {
+      const error = event.reason;
+      const errorMessage = error?.message || error?.toString() || '';
+      const errorStack = error?.stack || '';
+
+      // Filter out expected "RxStorageInstanceDexie is closed" errors
+      if (
+        errorMessage.includes('RxStorageInstanceDexie is closed') ||
+        errorMessage.includes('RxStorageInstance') ||
+        errorStack.includes('RxStorageInstanceDexie') ||
+        errorStack.includes('ensureNotClosed')
+      ) {
+        // Prevent this error from being logged
+        event.preventDefault();
+        console.debug(
+          '🔇 [AppComponent] Suppressed expected RxDB storage closed error during cleanup',
+        );
+        return;
+      }
+    });
+
+    // Handle global errors (window.onerror)
+    window.addEventListener('error', (event) => {
+      const errorMessage = event.message || event.error?.message || '';
+      const errorStack = event.error?.stack || '';
+
+      // Filter out expected "RxStorageInstanceDexie is closed" errors
+      if (
+        errorMessage.includes('RxStorageInstanceDexie is closed') ||
+        errorMessage.includes('RxStorageInstance') ||
+        errorStack.includes('RxStorageInstanceDexie') ||
+        errorStack.includes('ensureNotClosed')
+      ) {
+        // Prevent this error from being logged
+        event.preventDefault();
+        console.debug(
+          '🔇 [AppComponent] Suppressed expected RxDB storage closed error during cleanup',
+        );
+        return;
+      }
+    });
   }
 
   ngOnDestroy() {

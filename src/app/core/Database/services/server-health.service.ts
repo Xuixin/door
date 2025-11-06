@@ -1,18 +1,22 @@
-import { Injectable, NgZone, inject } from '@angular/core';
+import { Injectable, NgZone, inject, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Subscription } from 'rxjs';
+import { distinctUntilChanged } from 'rxjs/operators';
 import { environment } from 'src/environments/environment';
 import { ReplicationCoordinatorService } from './replication-coordinator.service';
+import { NetworkStatusService } from './network-status.service';
 
 @Injectable({
   providedIn: 'root',
 })
-export class ServerHealthService {
+export class ServerHealthService implements OnDestroy {
   private ws: WebSocket | null = null;
   private reconnectTimer: Subscription | null = null;
+  private networkSubscription: Subscription | null = null;
   private readonly PRIMARY_WS_URL = environment.wsUrl;
   private readonly SECONDARY_WS_URL =
     environment.wsSecondaryUrl || environment.wsUrl;
   private readonly coordinator = inject(ReplicationCoordinatorService);
+  private readonly networkStatus = inject(NetworkStatusService);
   private isUsingSecondary = false;
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
@@ -21,11 +25,49 @@ export class ServerHealthService {
   public readonly isOnline$ = new BehaviorSubject<boolean>(false);
 
   constructor(private zone: NgZone) {
-    this.connect();
+    this.initialize();
+  }
+
+  /**
+   * Initialize server health monitoring
+   */
+  private initialize(): void {
+    // Subscribe to network status changes
+    this.networkSubscription = this.networkStatus.isOnline$
+      .pipe(distinctUntilChanged())
+      .subscribe((isOnline) => {
+        if (isOnline) {
+          // Network is online - connect if not already connected
+          if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+            console.log('🌐 [ServerHealth] Network online - connecting...');
+            this.connect();
+          }
+        } else {
+    
+          this.disconnect();
+        }
+      });
+
+    // Only connect if network is online
+    if (this.networkStatus.isOnline()) {
+      this.connect();
+    } else {
+      console.log(
+        '📴 [ServerHealth] Network offline - skipping initial connection',
+      );
+    }
   }
 
   /** เปิดการเชื่อมต่อ */
   private connect() {
+    // Check network status before connecting
+    if (!this.networkStatus.isOnline()) {
+      console.log(
+        '📴 [ServerHealth] Network offline - cannot connect WebSocket',
+      );
+      return;
+    }
+
     // Check if already connected/connecting
     if (
       this.ws &&
@@ -141,17 +183,19 @@ export class ServerHealthService {
     };
 
     this.ws.onerror = (err) => {
-      console.error('⚠️ [ServerHealth] WS error:', err);
       this.zone.run(() => {
         this.isOnline$.next(false);
       });
-      // WebSocket will call onclose automatically on error
+
     };
   }
 
   /**
    * Handle primary server disconnect - delegate to coordinator
    */
+  private lastPrimaryDisconnectTime = 0;
+  private readonly PRIMARY_DISCONNECT_DEBOUNCE_MS = 3000; // 3 seconds debounce
+
   private async handlePrimaryDisconnect(): Promise<void> {
     try {
       // Check if replications are stopped before proceeding
@@ -162,6 +206,19 @@ export class ServerHealthService {
         return;
       }
 
+      // Debounce: prevent duplicate notifications within debounce period
+      const now = Date.now();
+      if (
+        now - this.lastPrimaryDisconnectTime <
+        this.PRIMARY_DISCONNECT_DEBOUNCE_MS
+      ) {
+        console.log(
+          '⏭️ [ServerHealth] Primary disconnect notification debounced, skipping',
+        );
+        return;
+      }
+      this.lastPrimaryDisconnectTime = now;
+
       // Add a small delay to avoid race condition with primary recovery detection
       // This prevents switching back to secondary immediately after primary recovery
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -170,6 +227,15 @@ export class ServerHealthService {
       if (this.coordinator.isReplicationsStopped()) {
         console.log(
           '⏭️ [ServerHealth] Replications stopped during delay, skipping reconnect',
+        );
+        return;
+      }
+
+      // Check if coordinator is already using secondary (prevent duplicate switch)
+      // We can't directly check coordinator state, but we can check if we're already using secondary
+      if (this.isUsingSecondary) {
+        console.log(
+          '⏭️ [ServerHealth] Already using secondary, skipping duplicate notification',
         );
         return;
       }
@@ -202,11 +268,35 @@ export class ServerHealthService {
     }
   }
 
+  private lastSecondaryDisconnectTime = 0;
+  private readonly SECONDARY_DISCONNECT_DEBOUNCE_MS = 3000; // 3 seconds debounce
+
   /**
    * Handle secondary server disconnect - delegate to coordinator
    */
   private async handleSecondaryDisconnect(): Promise<void> {
     try {
+      // Debounce: prevent duplicate notifications within debounce period
+      const now = Date.now();
+      if (
+        now - this.lastSecondaryDisconnectTime <
+        this.SECONDARY_DISCONNECT_DEBOUNCE_MS
+      ) {
+        console.log(
+          '⏭️ [ServerHealth] Secondary disconnect notification debounced, skipping',
+        );
+        return;
+      }
+      this.lastSecondaryDisconnectTime = now;
+
+      // Check if replications are stopped before proceeding
+      if (this.coordinator.isReplicationsStopped()) {
+        console.log(
+          '⏭️ [ServerHealth] Replications are stopped, skipping secondary disconnect handling',
+        );
+        return;
+      }
+
       // Notify coordinator
       await this.coordinator.handleSecondaryServerDown();
 
@@ -240,6 +330,12 @@ export class ServerHealthService {
    * Schedule reconnection attempt
    */
   private scheduleReconnect(): void {
+    // Check network status before attempting reconnect
+    if (!this.networkStatus.isOnline()) {
+      console.log('📴 [ServerHealth] Network offline - skipping reconnect');
+      return;
+    }
+
     // Check if replications are stopped before attempting reconnect
     if (this.coordinator.isReplicationsStopped()) {
       console.log(
@@ -308,12 +404,19 @@ export class ServerHealthService {
   public disconnect() {
     this.reconnectTimer?.unsubscribe();
     this.reconnectTimer = null;
-    this.ws?.close();
-    this.ws = null;
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
     this.currentWsUrl = null;
     this.isOnline$.next(false);
     this.isUsingSecondary = false;
     this.reconnectAttempts = 0;
+  }
+
+  ngOnDestroy(): void {
+    this.networkSubscription?.unsubscribe();
+    this.disconnect();
   }
 
   /**
@@ -322,6 +425,14 @@ export class ServerHealthService {
    */
   public startMonitoring(): void {
     console.log('🔄 [ServerHealth] Starting monitoring...');
+
+    // Check network status first
+    if (!this.networkStatus.isOnline()) {
+      console.log(
+        '📴 [ServerHealth] Network offline - cannot start monitoring',
+      );
+      return;
+    }
 
     // Check current replication state from coordinator
     const currentState = this.coordinator.getCurrentState();
