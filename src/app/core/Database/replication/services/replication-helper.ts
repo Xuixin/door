@@ -8,10 +8,10 @@ import { inject } from '@angular/core';
 export interface ReplicationConfig {
   name: string;
   collection: any; // RxCollection
-  pullQueryBuilder: (checkpoint: any, limit: number, url?: string) => any;
-  pullStreamQueryBuilder: (headers: any, url?: string) => any;
+  pullQueryBuilder?: (checkpoint: any, limit: number, url?: string) => any; // Optional: if undefined, pull will be disabled
+  pullStreamQueryBuilder?: (headers: any, url?: string) => any; // Optional: if undefined, pullStream will be disabled
   pushQueryBuilder?: (docs: any[]) => any; // Optional: if undefined, push will be disabled
-  checkpointField: 'server_updated_at' | 'cloud_updated_at';
+  checkpointField?: 'server_updated_at' | 'cloud_updated_at'; // Optional: only needed if pull is enabled
   urls: {
     http: string;
     ws: string;
@@ -29,13 +29,13 @@ export interface ReplicationConfig {
 export function setupCollectionReplication<T = any>(
   config: ReplicationConfig,
 ): RxGraphQLReplicationState<T, any> {
-  // Create response modifier for checkpoint field normalization
-  const dataPath = config.name.toLowerCase().replace(/-/g, '');
-  const responseModifier =
-    ReplicationConfigBuilder.createResponseModifierForUrl(
-      [dataPath],
-      config.urls.http,
-    );
+  // Create response modifier for checkpoint field normalization (only if pull is enabled)
+  const responseModifier = config.pullQueryBuilder
+    ? ReplicationConfigBuilder.createResponseModifierForUrl(
+        [config.name.toLowerCase().replace(/-/g, '')],
+        config.urls.http,
+      )
+    : undefined;
 
   const replication = replicateGraphQL<T, any>({
     collection: config.collection,
@@ -44,47 +44,58 @@ export function setupCollectionReplication<T = any>(
       http: config.urls.http,
       ws: config.urls.ws,
     },
-    pull: {
-      queryBuilder: (checkpoint: any, limit: number) => {
-        // Call the provided pull query builder with URL
-        return config.pullQueryBuilder(
-          checkpoint,
-          limit || 50,
-          config.urls.http,
-        );
-      },
-      batchSize: 10,
-      modifier: (doc: any) => {
-        // Clean null values (except deleted)
-        Object.entries(doc).forEach(([key, value]) => {
-          if (value === null && key !== 'deleted') {
-            delete doc[key];
-          }
-        });
+    pull: config.pullQueryBuilder
+      ? {
+          queryBuilder: (checkpoint: any, limit: number) => {
+            // Call the provided pull query builder with URL
+            return config.pullQueryBuilder!(
+              checkpoint,
+              limit || 50,
+              config.urls.http,
+            );
+          },
+          batchSize: 10,
+          modifier: (doc: any) => {
+            // Clean null values (except deleted)
+            Object.entries(doc).forEach(([key, value]) => {
+              if (value === null && key !== 'deleted') {
+                delete doc[key];
+              }
+            });
 
-        // Set server timestamps
-        doc['server_updated_at'] = Date.now().toString();
-        doc['server_created_at'] =
-          doc['server_created_at'] || Date.now().toString();
+            // Set server timestamps
+            doc['server_updated_at'] = Date.now().toString();
+            doc['server_created_at'] =
+              doc['server_created_at'] || Date.now().toString();
 
-        // Map RxDB _deleted to deleted field
-        doc['deleted'] = doc['_deleted'] || false;
+            // Map RxDB _deleted to deleted field
+            doc['deleted'] = doc['_deleted'] || false;
 
-        return doc;
-      },
-      streamQueryBuilder: (headers: any) => {
-        // Call the provided stream query builder with URL
-        return config.pullStreamQueryBuilder(headers, config.urls.http);
-      },
-      responseModifier: responseModifier,
-      includeWsHeaders: true,
-      wsOptions: {
-        retryAttempts: 10,
-        connectionParams: () => ({
-          id: config.serverId,
-        }),
-      },
-    },
+            return doc;
+          },
+          // Note: RxDB automatically handles duplicate documents by primary key (id)
+          // When a document with the same id is pulled, RxDB will update the existing document
+          // This prevents true duplicates. The checkpoint mechanism ensures we don't pull
+          // the same documents twice during normal operation.
+          streamQueryBuilder: config.pullStreamQueryBuilder
+            ? (headers: any) => {
+                // Call the provided stream query builder with URL
+                return config.pullStreamQueryBuilder!(
+                  headers,
+                  config.urls.http,
+                );
+              }
+            : undefined, // Disable stream if no pullStreamQueryBuilder provided
+          responseModifier: responseModifier,
+          includeWsHeaders: true,
+          wsOptions: {
+            retryAttempts: 10,
+            connectionParams: () => ({
+              id: config.serverId,
+            }),
+          },
+        }
+      : undefined, // Disable pull if no pullQueryBuilder provided
     push: config.pushQueryBuilder
       ? {
           queryBuilder: config.pushQueryBuilder,

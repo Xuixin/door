@@ -106,6 +106,7 @@ export class ReplicationCoordinatorService {
       this._currentState = 'stopped';
       this._replicationsStopped = true;
       this._replicationsStopped$.next(true);
+      
       console.log(
         '✅ [ReplicationCoordinator] All replications stopped gracefully',
       );
