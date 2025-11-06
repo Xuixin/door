@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, Injector } from '@angular/core';
 import { RxDatabase, RxCollection } from 'rxdb';
 import { RxGraphQLReplicationState } from 'rxdb/plugins/replication-graphql';
 import { removeGraphQLWebSocketRef } from 'rxdb/plugins/replication-graphql';
@@ -11,6 +11,7 @@ import { createReplicationConfigs } from '../config';
 import { PRIMARY_IDENTIFIERS, SECONDARY_IDENTIFIERS } from '../constants';
 import { isPrimaryIdentifier, isSecondaryIdentifier } from '../utils';
 import { DeviceEventFacade } from '../../collection/device-event/facade.service';
+import { ServerHealthService } from '../../services/server-health.service';
 
 interface DatabaseCollections {
   transaction: RxCollection;
@@ -26,6 +27,7 @@ export class ReplicationManagerService {
   private replicationStates: Map<string, RxGraphQLReplicationState<any, any>> =
     new Map();
   private replicationMonitorService: any = null;
+  private injector = inject(Injector);
 
   /**
    * Set replication monitor service (called after initialization to avoid circular dependency)
@@ -124,7 +126,7 @@ export class ReplicationManagerService {
         } catch (cancelError: any) {
           this.handleReplicationCancelError(cancelError, identifier);
         }
-      } 
+      }
     } catch (error: any) {
       // Handle errors gracefully
       if (
@@ -299,7 +301,13 @@ export class ReplicationManagerService {
           }
         }
 
-        const replicationState = setupCollectionReplication(config);
+        // Use lazy injection to avoid circular dependency
+        // ServerHealthService -> ReplicationCoordinatorService -> ReplicationManagerService
+        const serverHealthService = this.injector.get(ServerHealthService);
+        const replicationState = setupCollectionReplication(
+          config,
+          serverHealthService,
+        );
 
         // Track wasStarted flag - will be set to true when actually started
         this.setWasStarted(replicationState, false);

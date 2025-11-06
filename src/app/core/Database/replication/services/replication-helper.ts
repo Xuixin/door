@@ -4,7 +4,7 @@ import { removeGraphQLWebSocketRef } from 'rxdb/plugins/replication-graphql';
 import { RxCollection } from 'rxdb';
 import { ReplicationConfigBuilder } from './replication-config-builder';
 import { ClientIdentityService } from '../../../../services/client-identity.service';
-import { inject } from '@angular/core';
+import { ServerHealthService } from '../../services/server-health.service';
 
 export interface ReplicationConfig {
   name: string;
@@ -29,6 +29,7 @@ export interface ReplicationConfig {
  */
 export function setupCollectionReplication<T = any>(
   config: ReplicationConfig,
+  serverHealthService?: ServerHealthService,
 ): RxGraphQLReplicationState<T, any> {
   // Create response modifier for checkpoint field normalization (only if pull is enabled)
   const responseModifier = config.pullQueryBuilder
@@ -96,11 +97,13 @@ export function setupCollectionReplication<T = any>(
               id: config.serverId,
             }),
             on: {
-              closed: (event) => {
+              closed: (event: any) => {
                 // Use queueMicrotask to prevent blocking WebSocket event handlers
-                queueMicrotask(() => {
-                  console.log(`[${config.name} WebSocket Closed]`, event);
-                });
+                if (event.code === 1006 && serverHealthService) {
+                  queueMicrotask(() => {
+                    serverHealthService.handleDisconnect();
+                  });
+                }
               },
               error: (event: any) => {
                 // Use queueMicrotask to prevent blocking WebSocket event handlers

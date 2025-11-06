@@ -43,7 +43,6 @@ export class ServerHealthService implements OnDestroy {
             this.connect();
           }
         } else {
-    
           this.disconnect();
         }
       });
@@ -167,10 +166,8 @@ export class ServerHealthService implements OnDestroy {
         this.isOnline$.next(false);
 
         if (!this.isUsingSecondary) {
- 
           this.handlePrimaryDisconnect();
         } else {
- 
           this.handleSecondaryDisconnect();
         }
       });
@@ -180,7 +177,6 @@ export class ServerHealthService implements OnDestroy {
       this.zone.run(() => {
         this.isOnline$.next(false);
       });
-
     };
   }
 
@@ -456,5 +452,13 @@ export class ServerHealthService implements OnDestroy {
 
     // Connect to appropriate server
     this.connect();
+  }
+
+  public handleDisconnect() {
+    if (this.isUsingSecondary) {
+      this.handleSecondaryDisconnect();
+    } else {
+      this.handlePrimaryDisconnect();
+    }
   }
 }
