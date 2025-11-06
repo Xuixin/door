@@ -156,7 +156,7 @@ export class ServerHealthService implements OnDestroy {
 
     this.ws.onclose = (event) => {
       this.zone.run(() => {
-        console.warn(
+        console.log(
           `🔴 [ServerHealth] ${this.isUsingSecondary ? 'SECONDARY' : 'PRIMARY'} WS disconnected`,
           {
             code: event.code,
@@ -166,17 +166,11 @@ export class ServerHealthService implements OnDestroy {
         );
         this.isOnline$.next(false);
 
-        // If primary server disconnected, notify coordinator
         if (!this.isUsingSecondary) {
-          console.log(
-            '🔄 [ServerHealth] Primary server disconnected, notifying coordinator...',
-          );
+ 
           this.handlePrimaryDisconnect();
         } else {
-          // If secondary also disconnected, notify coordinator
-          console.warn(
-            '⚠️ [ServerHealth] Secondary server also disconnected, notifying coordinator...',
-          );
+ 
           this.handleSecondaryDisconnect();
         }
       });

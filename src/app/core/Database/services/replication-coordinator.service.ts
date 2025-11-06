@@ -232,7 +232,7 @@ export class ReplicationCoordinatorService {
           this._replicationsStopped = false;
           this._replicationsStopped$.next(false);
         } else {
-          console.warn(
+          console.log(
             '⚠️ [ReplicationCoordinator] Both servers unavailable, stopping all replications...',
           );
           await this.stopAllReplicationsGracefully();

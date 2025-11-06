@@ -63,10 +63,17 @@ export class ReplicationManagerService {
 
   /**
    * Close WebSocket connection if needed
+   * Only closes if replication was started (wasStarted check)
    */
   private async closeReplicationWebSocketIfNeeded(
     state: RxGraphQLReplicationState<any, any>,
   ): Promise<void> {
+    // Check if replication was started before closing WebSocket
+    const wasStarted = this.getWasStarted(state);
+    if (!wasStarted) {
+      return; // Don't close WebSocket if replication was never started
+    }
+
     const wsUrl = (state as any).url?.ws;
     if (wsUrl) {
       await this.closeReplicationWebSocket(wsUrl);
@@ -85,7 +92,7 @@ export class ReplicationManagerService {
         `⚠️ [ReplicationManager] Storage already closed for ${identifier}, skipping cancel`,
       );
     } else {
-      throw error; // Re-throw other errors
+      throw error;
     }
   }
 
@@ -97,13 +104,13 @@ export class ReplicationManagerService {
     state: RxGraphQLReplicationState<any, any>,
   ): Promise<void> {
     try {
-      // Close WebSocket connection if needed
-      await this.closeReplicationWebSocketIfNeeded(state);
-
-      // Check if replication was started
+      // Check if replication was started before closing WebSocket
       const wasStarted = this.getWasStarted(state);
 
       if (wasStarted) {
+        // Close WebSocket connection if needed (only if was started)
+        await this.closeReplicationWebSocketIfNeeded(state);
+
         // Wait a bit to ensure WebSocket is fully closed before canceling
         await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -117,11 +124,7 @@ export class ReplicationManagerService {
         } catch (cancelError: any) {
           this.handleReplicationCancelError(cancelError, identifier);
         }
-      } else {
-        console.log(
-          `⏭️ [ReplicationManager] Replication ${identifier} not started, skipping cancel`,
-        );
-      }
+      } 
     } catch (error: any) {
       // Handle errors gracefully
       if (
@@ -232,11 +235,8 @@ export class ReplicationManagerService {
       await this.cancelSingleReplication(identifier, state);
     }
 
-    // Clear replication states map
     this.replicationStates.clear();
-    console.log('✅ [ReplicationManager] All replications stopped gracefully');
 
-    // Notify replication monitor about state changes
     this.notifyReplicationMonitor();
   }
 
@@ -271,20 +271,15 @@ export class ReplicationManagerService {
       emitPrimaryRecoveryFn,
     );
 
-    // Check if both servers are down (offline mode) once before loop
     // If offline, all replications should have autoStart=false
     const bothServersDown = await this.checkBothServersDown();
 
+    let statesActivedata = [];
     // Initialize all replications
     for (const config of replicationConfigs) {
       try {
         if (bothServersDown) {
-          // Offline mode: Disable autoStart for all replications
-          // They can be started manually when connection is restored
           config.autoStart = false;
-          console.log(
-            `⏸️ [ReplicationManager] Offline mode: ${config.name} autoStart=false`,
-          );
         } else {
           // Set autoStart based on which server we're using
           if (useSecondary) {
@@ -317,10 +312,10 @@ export class ReplicationManagerService {
         // Log initial active state
         const initialActive =
           (replicationState as any).active$?.getValue?.() ?? false;
-        console.log(
-          `✅ [ReplicationManager] Replication initialized: ${config.name} (active: ${initialActive}, autoStart: ${config.autoStart})`,
-        );
 
+        statesActivedata.push({
+          [config.replicationIdentifier]: initialActive,
+        });
         // If autoStart is true, track when replication actually starts
         if (config.autoStart) {
           // Subscribe to active$ to track when replication starts
@@ -338,17 +333,7 @@ export class ReplicationManagerService {
       }
     }
 
-    // Replications with autoStart: true will start automatically
-    // No need to manually call startSecondary() or startPrimary()
-    if (useSecondary) {
-      console.log(
-        '✅ [ReplicationManager] Secondary replications initialized with autoStart: true',
-      );
-    } else {
-      console.log(
-        '✅ [ReplicationManager] Primary replications initialized with autoStart: true',
-      );
-    }
+    console.log('statesActivedata', statesActivedata);
 
     // Notify replication monitor about state changes
     setTimeout(() => this.notifyReplicationMonitor(), 500);
@@ -656,16 +641,11 @@ export class ReplicationManagerService {
       const secondaryAvailable = await checkConnectionFn(secondaryUrl);
 
       if (!secondaryAvailable) {
-        console.warn(
+        console.log(
           '⚠️ [ReplicationManager] Both primary and secondary servers are unavailable!',
         );
-        console.log(
-          '💡 [ReplicationManager] Initializing replications with autoStart=false for offline operation...',
-        );
-        // Still initialize replications but with autoStart=false (offline-first behavior)
-        // This allows manual start when servers are available
-        useSecondary = false; // Doesn't matter, will be overridden by checkBothServersDown()
-        // Continue to initialize replications with autoStart=false
+
+        useSecondary = false;
       } else {
         useSecondary = true;
         // Set global flag for other services to use

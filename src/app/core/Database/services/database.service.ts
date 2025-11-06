@@ -154,53 +154,34 @@ export class DatabaseService {
 
       console.log('✅ [NewDatabase] Database and collections initialized');
 
-      // Initialize replications only if not already initialized
-      // Replications initialization may fail in offline mode, but that's OK
-      // Database will still work in offline mode (offline-first approach)
       if (this.replicationManager.getAllReplicationStates().size === 0) {
         try {
-          // Check server availability first
           const primaryAvailable = await this.checkConnection(
             environment.apiUrl,
           );
           let useSecondary = false;
 
           if (!primaryAvailable) {
-            // Check secondary server availability
             const secondaryUrl =
               environment.apiSecondaryUrl || environment.apiUrl;
             const secondaryAvailable = await this.checkConnection(secondaryUrl);
 
             if (!secondaryAvailable) {
-              // Both servers are down - don't throw error, just log warning
-              // Database will work in offline mode
-              console.warn(
-                '⚠️ [NewDatabase] Both primary and secondary servers are unavailable!',
-              );
-              console.log(
-                '💡 [NewDatabase] Database is ready for offline operation. Initializing replications with autoStart=false for manual start later.',
-              );
 
-              // Still initialize replications but with autoStart=false
-              // This allows manual start when servers are available
+
               const serverId =
                 (await this.identity.getClientId()) || environment.serverId;
 
-              // Use lazy injection to avoid circular dependency
               const deviceEventFacade = this.injector.get(DeviceEventFacade);
 
-              // Initialize replications with autoStart=false (offline mode)
-              // Pass useSecondary=false, but it will be overridden by checkBothServersDown() in initializeReplications
               await this.replicationManager.initializeReplications(
                 this.db,
-                false, // useSecondary - doesn't matter, will be overridden by offline check
+                false,
                 serverId,
                 deviceEventFacade,
                 () => this.emitPrimaryRecoveryEvent(),
               );
 
-              // Notify coordinator that replications are stopped
-              // Use lazy injection to avoid circular dependency
               try {
                 const coordinator = this.injector.get(
                   ReplicationCoordinatorService,
@@ -208,30 +189,24 @@ export class DatabaseService {
                 // Update coordinator state to stopped
                 await coordinator.handleBothServersDown();
               } catch (coordError: any) {
-                // If coordinator is not available, just log warning
                 console.warn(
                   '⚠️ [NewDatabase] Could not notify coordinator of offline state:',
                   coordError.message,
                 );
               }
 
-              // App can still work offline, replications are initialized but not started
               return;
             }
 
             useSecondary = true;
-            // Set global flag for other services to use
             (window as any).__USE_SECONDARY_SERVER__ = true;
           } else {
-            // Primary is available, clear the flag
             (window as any).__USE_SECONDARY_SERVER__ = false;
           }
 
           const serverId =
             (await this.identity.getClientId()) || environment.serverId;
 
-          // Initialize replications using ReplicationManagerService
-          // Use lazy injection to avoid circular dependency
           const deviceEventFacade = this.injector.get(DeviceEventFacade);
           await this.replicationManager.initializeReplications(
             this.db,
@@ -241,8 +216,6 @@ export class DatabaseService {
             () => this.emitPrimaryRecoveryEvent(),
           );
         } catch (replicationError: any) {
-          // Don't fail database initialization if replications fail
-          // This allows offline-first operation
           console.warn(
             '⚠️ [NewDatabase] Replication initialization failed (may be offline):',
             replicationError.message,

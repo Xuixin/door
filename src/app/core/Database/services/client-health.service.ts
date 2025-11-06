@@ -55,7 +55,6 @@ export class ClientHealthService implements OnDestroy {
 
     // If offline initially, notify coordinator
     if (!initialOnline) {
-      // Wait a bit for DB to initialize if needed
       setTimeout(async () => {
         await this.handleOffline();
       }, 2000); // Wait 2 seconds for DB initialization

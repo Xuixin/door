@@ -108,11 +108,9 @@ export abstract class BaseFacadeService<T = any> implements OnDestroy {
     // Wait for database to be ready
     this.waitForDatabase().then(() => {
       const collectionName = this.getCollectionName();
-      console.log(`📊 Setting up ${collectionName} subscriptions...`);
 
       try {
         this.setupSubscriptions();
-        console.log(`✅ ${collectionName} subscriptions setup completed`);
       } catch (error) {
         console.error(
           `❌ Error setting up ${collectionName} subscriptions:`,
