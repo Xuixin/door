@@ -446,41 +446,26 @@ export class ReplicationManagerService {
             continue;
           }
 
-          if (serverType === 'secondary') {
-            // For secondary, check if replication is already active
-            const isActive = (state as any).active$?.getValue?.() ?? false;
+          const hasStartFn = typeof (state as any).start === 'function';
+          const isActive = (state as any).active$?.getValue?.() ?? false;
 
-            if (!isActive) {
-              // If not active, try to start it first
-              if (typeof (state as any).start === 'function') {
-                await (state as any).start();
-                this.setWasStarted(state, true);
-                console.log(
-                  `✅ [ReplicationManager] Started ${serverType}: ${identifier}`,
-                );
-              } else {
-                // Fallback: use reSync if start() is not available
-                state.reSync();
-                this.setWasStarted(state, true);
-                console.log(
-                  `✅ [ReplicationManager] Re-synced ${serverType}: ${identifier}`,
-                );
-              }
-            } else {
-              // Already active, just re-sync and track wasStarted
-              state.reSync();
-              this.setWasStarted(state, true);
-              console.log(
-                `✅ [ReplicationManager] Re-synced active ${serverType}: ${identifier}`,
-              );
-            }
+          let startMessage: string | null = null;
+
+          if (hasStartFn && !isActive) {
+            await (state as any).start();
+            startMessage = `✅ [ReplicationManager] Started ${serverType} (start()): ${identifier}`;
+          } else if (!hasStartFn) {
+            startMessage = `✅ [ReplicationManager] Started ${serverType} (reSync fallback): ${identifier}`;
           } else {
-            // For primary, just re-sync to start replication
-            state.reSync();
-            this.setWasStarted(state, true);
-            console.log(
-              `✅ [ReplicationManager] Started ${serverType}: ${identifier}`,
-            );
+            startMessage = `✅ [ReplicationManager] Re-synced active ${serverType}: ${identifier}`;
+          }
+
+          // Always trigger a reSync so the replication runs immediately
+          state.reSync();
+          this.setWasStarted(state, true);
+
+          if (startMessage) {
+            console.log(startMessage);
           }
         } catch (error: any) {
           console.error(
