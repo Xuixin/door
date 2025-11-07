@@ -318,6 +318,17 @@ export class ReplicationManagerService {
         );
       }
     }
+
+    const status = await this.checkServerStatus();
+    if (status === 'primary') {
+      await this.startReplication('primary');
+    } else if (status === 'secondary') {
+      await this.startReplication('secondary');
+    } else {
+      console.warn(
+        '⚠️ [ReplicationManager] Both servers down, cannot start replication',
+      );
+    }
   }
 
   /**
